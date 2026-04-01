@@ -15,10 +15,10 @@ LDFLAGS = -shared \
           -Wl,-rpath,$(CCL_HOME)/lib \
           -Wl,-rpath,$(CUDA_HOME)/lib64
 
-build: libflagcx-ccl-example.so
+build: libsdccl-ccl-example.so
 
-libflagcx-ccl-example.so: plugin.cc
+libsdccl-ccl-example.so: plugin.cc
 	g++ $(CXXFLAGS) $(LDFLAGS) -o $@ $^
 
 clean:
-	rm -f libflagcx-ccl-example.so
+	rm -f libsdccl-ccl-example.so

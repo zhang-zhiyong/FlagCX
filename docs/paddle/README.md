@@ -1,8 +1,8 @@
-# Training Models with Paddle and FlagCX
+# Training Models with Paddle and SDCCL
 
-FlagCX is now fully integrated into Paddle as an **optional high-performance communication backend**. This integration enables efficient distributed training on multiple hardware platforms, including support for **heterogeneous training** on Nvidia and Iluvatar GPUs.  
+SDCCL is now fully integrated into Paddle as an **optional high-performance communication backend**. This integration enables efficient distributed training on multiple hardware platforms, including support for **heterogeneous training** on Nvidia and Iluvatar GPUs.  
 
-Use the guides below to quickly get started with training models using Paddle + FlagCX.
+Use the guides below to quickly get started with training models using Paddle + SDCCL.
 
 ---
 

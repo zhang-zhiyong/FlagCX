@@ -1,4 +1,4 @@
-flagcx (0.8.0-1) unstable; urgency=medium
+sdccl (0.8.0-1) unstable; urgency=medium
 
   * New upstream release 0.8.0
   * Support for MetaX and NVIDIA hardware backends

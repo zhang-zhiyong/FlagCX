@@ -1,4 +1,4 @@
-# FlagCX Packaging
+# SDCCL Packaging
 
 This directory contains packaging configurations for various Linux distributions.
 
@@ -12,7 +12,7 @@ packaging/
 │   ├── changelog       # Version history
 │   ├── copyright       # License information
 │   └── build-helpers/  # Build scripts and Dockerfiles
-│       ├── build-flagcx.sh          # Unified build script
+│       ├── build-sdccl.sh          # Unified build script
 │       ├── Dockerfile.deb           # Unified build configuration
 │       └── test-nexus-upload.sh     # Local Nexus upload test script
 └── rpm/                # Future: RPM packaging for RHEL/Fedora/etc.
@@ -38,7 +38,7 @@ Use the unified build script to build packages for any vendor/backend:
 ### Usage
 
 ```bash
-./packaging/debian/build-helpers/build-flagcx.sh <vendor> [base_image_version]
+./packaging/debian/build-helpers/build-sdccl.sh <vendor> [base_image_version]
 ```
 
 **Parameters:**
@@ -51,20 +51,20 @@ Use the unified build script to build packages for any vendor/backend:
 
 **Build for NVIDIA:**
 ```bash
-./packaging/debian/build-helpers/build-flagcx.sh nvidia
+./packaging/debian/build-helpers/build-sdccl.sh nvidia
 # Output: debian-packages/nvidia/*.deb
 ```
 
 **Build for MetaX:**
 ```bash
-./packaging/debian/build-helpers/build-flagcx.sh metax
+./packaging/debian/build-helpers/build-sdccl.sh metax
 # Output: debian-packages/metax/*.deb
 ```
 
 **Specify custom base image version:**
 ```bash
-./packaging/debian/build-helpers/build-flagcx.sh nvidia v1.2.3
-./packaging/debian/build-helpers/build-flagcx.sh metax latest
+./packaging/debian/build-helpers/build-sdccl.sh nvidia v1.2.3
+./packaging/debian/build-helpers/build-sdccl.sh metax latest
 ```
 
 ### Base Images
@@ -85,7 +85,7 @@ The build script automatically runs `lintian` to validate the generated packages
 sudo apt-get install lintian
 
 # Build packages - lintian runs automatically
-./packaging/debian/build-helpers/build-flagcx.sh nvidia
+./packaging/debian/build-helpers/build-sdccl.sh nvidia
 ```
 
 Lintian checks are non-fatal and won't stop the build if issues are found.
@@ -125,18 +125,18 @@ After upload, users can install packages from the APT repository:
 ```bash
 # Add the FlagOS APT repository
 echo "deb https://resource.flagos.net/repository/flagos-apt-hosted/ flagos-apt-hosted main" | \
-  sudo tee /etc/apt/sources.list.d/flagcx.list
+  sudo tee /etc/apt/sources.list.d/sdccl.list
 
 # Update package list
 sudo apt-get update
 
 # Install packages for your vendor
-sudo apt-get install libflagcx-<vendor>        # Runtime library
-sudo apt-get install libflagcx-<vendor>-dev    # Development files
+sudo apt-get install libsdccl-<vendor>        # Runtime library
+sudo apt-get install libsdccl-<vendor>-dev    # Development files
 
 # Examples:
-sudo apt-get install libflagcx-nvidia libflagcx-nvidia-dev
-sudo apt-get install libflagcx-metax libflagcx-metax-dev
+sudo apt-get install libsdccl-nvidia libsdccl-nvidia-dev
+sudo apt-get install libsdccl-metax libsdccl-metax-dev
 ```
 
 ## Architecture
@@ -146,8 +146,8 @@ The build process uses a **unified multi-stage Dockerfile** with build profiles:
 ### Build Profiles Support
 
 The `debian/control` file defines build profiles to support multiple backends:
-- `pkg.flagcx.nvidia-only` - Build only NVIDIA packages
-- `pkg.flagcx.metax-only` - Build only MetaX packages
+- `pkg.sdccl.nvidia-only` - Build only NVIDIA packages
+- `pkg.sdccl.metax-only` - Build only MetaX packages
 
 ### Unified Dockerfile
 
@@ -161,7 +161,7 @@ A single `Dockerfile.deb` builds packages for all backends using build arguments
 1. **Builder stage**: Based on upstream flagbase images
    - Contains all necessary build dependencies (CUDA/NCCL or MACA SDK)
    - Installs Debian packaging tools (`debhelper`, `dpkg-dev`, etc.)
-   - Runs `dpkg-buildpackage` with `DEB_BUILD_PROFILES=pkg.flagcx.${VENDOR}-only`
+   - Runs `dpkg-buildpackage` with `DEB_BUILD_PROFILES=pkg.sdccl.${VENDOR}-only`
    - Only builds packages for the specified vendor
 
 2. **Output stage**: Minimal Alpine image

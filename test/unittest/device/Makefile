@@ -8,11 +8,11 @@ PROJECT_ROOT := $(abspath ../../..)
 
 # Include directories
 INCLUDEDIR := \
-	$(PROJECT_ROOT)/flagcx/include \
-	$(PROJECT_ROOT)/flagcx/adaptor/include \
-	$(PROJECT_ROOT)/flagcx/core/include \
-	$(PROJECT_ROOT)/flagcx/service/include \
-	$(PROJECT_ROOT)/flagcx/runner/include \
+	$(PROJECT_ROOT)/sdccl/include \
+	$(PROJECT_ROOT)/sdccl/adaptor/include \
+	$(PROJECT_ROOT)/sdccl/core/include \
+	$(PROJECT_ROOT)/sdccl/service/include \
+	$(PROJECT_ROOT)/sdccl/runner/include \
 	$(PROJECT_ROOT)/third-party/googletest/googletest/include \
 	$(PROJECT_ROOT)/third-party/json/single_include
 
@@ -24,8 +24,8 @@ BINOBJ := $(SRCFILES:%.cpp=$(OBJDIR)/%.o)
 GTEST_DIR := $(PROJECT_ROOT)/third-party/googletest
 GTEST_LIB := $(GTEST_DIR)/build/lib
 
-# FlagCX library
-FLAGCX_LIB := $(PROJECT_ROOT)/build/lib
+# SDCCL library
+SDCCL_LIB := $(PROJECT_ROOT)/build/lib
 
 # Target
 TARGET := device_test
@@ -38,11 +38,11 @@ $(BINDIR)/$(TARGET): $(BINOBJ)
 	@mkdir -p `dirname $@`
 	@echo "Linking   $@"
 	@g++ $(BINOBJ) -o $@ \
-		-L$(FLAGCX_LIB) \
+		-L$(SDCCL_LIB) \
 		-L$(GTEST_LIB) \
 		-Wl,--no-as-needed \
-		-Wl,-rpath,$(FLAGCX_LIB) \
-		-lflagcx \
+		-Wl,-rpath,$(SDCCL_LIB) \
+		-lsdccl \
 		-lgtest \
 		-lgtest_main \
 		-lpthread \

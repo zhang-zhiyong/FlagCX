@@ -2,14 +2,14 @@
  * Copyright (c) 2026 BAAI. All rights reserved.
  ************************************************************************/
 
-#include "flagcx.h"
-#include "flagcx_kernel.h"
+#include "sdccl.h"
+#include "sdccl_kernel.h"
 #include "tools.h"
 #include <algorithm>
 #include <cstring>
 #include <iostream>
 
-#define DATATYPE flagcxFloat
+#define DATATYPE sdcclFloat
 
 int main(int argc, char *argv[]) {
   parser args(argc, argv);
@@ -22,11 +22,11 @@ int main(int argc, char *argv[]) {
   uint64_t splitMask = args.getSplitMask();
   int localRegister = args.getLocalRegister();
 
-  flagcxHandlerGroup_t handler;
-  FLAGCXCHECK(flagcxHandleInit(&handler));
-  flagcxUniqueId_t &uniqueId = handler->uniqueId;
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+  sdcclHandlerGroup_t handler;
+  SDCCLCHECK(sdcclHandleInit(&handler));
+  sdcclUniqueId_t &uniqueId = handler->uniqueId;
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   int color = 0;
   int worldSize = 1, worldRank = 0;
@@ -36,60 +36,60 @@ int main(int argc, char *argv[]) {
              splitComm, splitMask);
 
   int nGpu;
-  FLAGCXCHECK(devHandle->getDeviceCount(&nGpu));
-  FLAGCXCHECK(devHandle->setDevice(worldRank % nGpu));
+  SDCCLCHECK(devHandle->getDeviceCount(&nGpu));
+  SDCCLCHECK(devHandle->setDevice(worldRank % nGpu));
 
   if (proc == 0)
-    FLAGCXCHECK(flagcxGetUniqueId(&uniqueId));
-  MPI_Bcast((void *)uniqueId, sizeof(flagcxUniqueId), MPI_BYTE, 0, splitComm);
+    SDCCLCHECK(sdcclGetUniqueId(&uniqueId));
+  MPI_Bcast((void *)uniqueId, sizeof(sdcclUniqueId), MPI_BYTE, 0, splitComm);
   MPI_Barrier(MPI_COMM_WORLD);
 
-  FLAGCXCHECK(flagcxCommInitRank(&comm, totalProcs, uniqueId, proc));
+  SDCCLCHECK(sdcclCommInitRank(&comm, totalProcs, uniqueId, proc));
 
-  flagcxStream_t stream;
-  FLAGCXCHECK(devHandle->streamCreate(&stream));
+  sdcclStream_t stream;
+  SDCCLCHECK(devHandle->streamCreate(&stream));
 
   void *sendBuff = nullptr, *recvBuff = nullptr, *hello;
   void *sendHandle = nullptr, *recvHandle = nullptr;
-  flagcxWindow_t sendWin = nullptr, recvWin = nullptr;
+  sdcclWindow_t sendWin = nullptr, recvWin = nullptr;
   size_t count;
   timer tim;
 
   if (localRegister == 2) {
-    // Window mode: VMM alloc with comm (for flagcxCommWindowRegister later)
-    FLAGCXCHECK(flagcxMemAlloc(&sendBuff, maxBytes));
-    FLAGCXCHECK(flagcxMemAlloc(&recvBuff, maxBytes));
-    FLAGCXCHECK(flagcxCommWindowRegister(comm, sendBuff, maxBytes, &sendWin,
-                                         FLAGCX_WIN_COLL_SYMMETRIC));
-    FLAGCXCHECK(flagcxCommWindowRegister(comm, recvBuff, maxBytes, &recvWin,
-                                         FLAGCX_WIN_COLL_SYMMETRIC));
+    // Window mode: VMM alloc with comm (for sdcclCommWindowRegister later)
+    SDCCLCHECK(sdcclMemAlloc(&sendBuff, maxBytes));
+    SDCCLCHECK(sdcclMemAlloc(&recvBuff, maxBytes));
+    SDCCLCHECK(sdcclCommWindowRegister(comm, sendBuff, maxBytes, &sendWin,
+                                         SDCCL_WIN_COLL_SYMMETRIC));
+    SDCCLCHECK(sdcclCommWindowRegister(comm, recvBuff, maxBytes, &recvWin,
+                                         SDCCL_WIN_COLL_SYMMETRIC));
   } else if (localRegister == 1) {
     // Zero-copy: alloc + register for NIC RDMA access
-    FLAGCXCHECK(flagcxMemAlloc(&sendBuff, maxBytes));
-    FLAGCXCHECK(flagcxMemAlloc(&recvBuff, maxBytes));
-    FLAGCXCHECK(flagcxCommRegister(comm, sendBuff, maxBytes, &sendHandle));
-    FLAGCXCHECK(flagcxCommRegister(comm, recvBuff, maxBytes, &recvHandle));
+    SDCCLCHECK(sdcclMemAlloc(&sendBuff, maxBytes));
+    SDCCLCHECK(sdcclMemAlloc(&recvBuff, maxBytes));
+    SDCCLCHECK(sdcclCommRegister(comm, sendBuff, maxBytes, &sendHandle));
+    SDCCLCHECK(sdcclCommRegister(comm, recvBuff, maxBytes, &recvHandle));
   } else {
     // Unregistered
-    FLAGCXCHECK(
-        devHandle->deviceMalloc(&sendBuff, maxBytes, flagcxMemDevice, NULL));
-    FLAGCXCHECK(
-        devHandle->deviceMalloc(&recvBuff, maxBytes, flagcxMemDevice, NULL));
+    SDCCLCHECK(
+        devHandle->deviceMalloc(&sendBuff, maxBytes, sdcclMemDevice, NULL));
+    SDCCLCHECK(
+        devHandle->deviceMalloc(&recvBuff, maxBytes, sdcclMemDevice, NULL));
   }
   hello = malloc(maxBytes);
   memset(hello, 0, maxBytes);
 
   // Create device communicator for AlltoAll demo
   // Inter-only barrier needs inter barrier resources (GIN/FIFO Signal)
-  flagcxDevCommRequirements reqs = FLAGCX_DEV_COMM_REQUIREMENTS_INITIALIZER;
-  reqs.interBarrierCount = FLAGCX_DEVICE_CTA_COUNT;
-  flagcxDevComm_t devComm = nullptr;
-  FLAGCXCHECK(flagcxDevCommCreate(comm, &reqs, &devComm));
+  sdcclDevCommRequirements reqs = SDCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.interBarrierCount = SDCCL_DEVICE_CTA_COUNT;
+  sdcclDevComm_t devComm = nullptr;
+  SDCCLCHECK(sdcclDevCommCreate(comm, &reqs, &devComm));
 
   // Create device memory handles for send/recv buffers
-  flagcxDevMem_t sendMem = nullptr, recvMem = nullptr;
-  FLAGCXCHECK(flagcxDevMemCreate(comm, sendBuff, maxBytes, sendWin, &sendMem));
-  FLAGCXCHECK(flagcxDevMemCreate(comm, recvBuff, maxBytes, recvWin, &recvMem));
+  sdcclDevMem_t sendMem = nullptr, recvMem = nullptr;
+  SDCCLCHECK(sdcclDevMemCreate(comm, sendBuff, maxBytes, sendWin, &sendMem));
+  SDCCLCHECK(sdcclDevMemCreate(comm, recvBuff, maxBytes, recvWin, &recvMem));
 
   if (proc == 0 && color == 0) {
     printf("\n# FIFO AlltoAll test (two-sided send/recv, -R %d)\n",
@@ -98,19 +98,19 @@ int main(int argc, char *argv[]) {
 
   // Warm-up
   for (int i = 0; i < numWarmupIters; i++) {
-    FLAGCXCHECK(flagcxInterTwoSidedAlltoAll(
+    SDCCLCHECK(sdcclInterTwoSidedAlltoAll(
         sendMem, recvMem,
         std::max((size_t)1, maxBytes / sizeof(float) / totalProcs), DATATYPE,
         devComm, stream));
   }
-  FLAGCXCHECK(devHandle->streamSynchronize(stream));
+  SDCCLCHECK(devHandle->streamSynchronize(stream));
   for (int i = 0; i < numWarmupIters; i++) {
-    FLAGCXCHECK(flagcxInterTwoSidedAlltoAll(
+    SDCCLCHECK(sdcclInterTwoSidedAlltoAll(
         sendMem, recvMem,
         std::max((size_t)1, minBytes / sizeof(float) / totalProcs), DATATYPE,
         devComm, stream));
   }
-  FLAGCXCHECK(devHandle->streamSynchronize(stream));
+  SDCCLCHECK(devHandle->streamSynchronize(stream));
 
   for (size_t size = minBytes; size <= maxBytes; size *= stepFactor) {
     count = size / sizeof(float) / totalProcs;
@@ -125,11 +125,11 @@ int main(int argc, char *argv[]) {
         helloFloat[r * count + i] = (float)(proc * 1000 + r * 100 + (int)i);
       }
     }
-    FLAGCXCHECK(devHandle->deviceMemcpy(sendBuff, hello, size,
-                                        flagcxMemcpyHostToDevice, NULL));
+    SDCCLCHECK(devHandle->deviceMemcpy(sendBuff, hello, size,
+                                        sdcclMemcpyHostToDevice, NULL));
     memset(hello, 0, size);
-    FLAGCXCHECK(devHandle->deviceMemcpy(recvBuff, hello, size,
-                                        flagcxMemcpyHostToDevice, NULL));
+    SDCCLCHECK(devHandle->deviceMemcpy(recvBuff, hello, size,
+                                        sdcclMemcpyHostToDevice, NULL));
 
     if (color == 0 && printBuffer && (proc == 0 || proc == totalProcs - 1)) {
       printf("rank%d sendBuff:", proc);
@@ -143,16 +143,16 @@ int main(int argc, char *argv[]) {
 
     tim.reset();
     for (int i = 0; i < numIters; i++) {
-      FLAGCXCHECK(flagcxInterTwoSidedAlltoAll(sendMem, recvMem, count, DATATYPE,
+      SDCCLCHECK(sdcclInterTwoSidedAlltoAll(sendMem, recvMem, count, DATATYPE,
                                               devComm, stream));
     }
-    FLAGCXCHECK(devHandle->streamSynchronize(stream));
+    SDCCLCHECK(devHandle->streamSynchronize(stream));
     double elapsedTime = tim.elapsed() / numIters;
 
     // Verify correctness
     memset(hello, 0, size);
-    FLAGCXCHECK(devHandle->deviceMemcpy(hello, recvBuff, size,
-                                        flagcxMemcpyDeviceToHost, NULL));
+    SDCCLCHECK(devHandle->deviceMemcpy(hello, recvBuff, size,
+                                        sdcclMemcpyDeviceToHost, NULL));
     helloFloat = (float *)hello;
     bool correct = true;
     for (int src = 0; src < totalProcs && correct; src++) {
@@ -194,22 +194,22 @@ int main(int argc, char *argv[]) {
   // Falls back to FIFO AlltoAll on Fallback when window not available
   // ==========================================================================
   if (localRegister == 2) {
-    flagcxDevComm_t a2aDevComm = nullptr;
-    flagcxDevMem_t a2aSendMem = nullptr, a2aRecvMem = nullptr;
+    sdcclDevComm_t a2aDevComm = nullptr;
+    sdcclDevMem_t a2aSendMem = nullptr, a2aRecvMem = nullptr;
 
     if (proc == 0 && color == 0) {
       printf("\n# Window AlltoAll test (two-sided send/recv, -R 2)\n");
     }
 
-    flagcxDevCommRequirements a2aReqs =
-        FLAGCX_DEV_COMM_REQUIREMENTS_INITIALIZER;
-    a2aReqs.interBarrierCount = FLAGCX_DEVICE_CTA_COUNT;
-    FLAGCXCHECK(flagcxDevCommCreate(comm, &a2aReqs, &a2aDevComm));
+    sdcclDevCommRequirements a2aReqs =
+        SDCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    a2aReqs.interBarrierCount = SDCCL_DEVICE_CTA_COUNT;
+    SDCCLCHECK(sdcclDevCommCreate(comm, &a2aReqs, &a2aDevComm));
 
-    FLAGCXCHECK(
-        flagcxDevMemCreate(comm, sendBuff, maxBytes, sendWin, &a2aSendMem));
-    FLAGCXCHECK(
-        flagcxDevMemCreate(comm, recvBuff, maxBytes, recvWin, &a2aRecvMem));
+    SDCCLCHECK(
+        sdcclDevMemCreate(comm, sendBuff, maxBytes, sendWin, &a2aSendMem));
+    SDCCLCHECK(
+        sdcclDevMemCreate(comm, recvBuff, maxBytes, recvWin, &a2aRecvMem));
 
     for (size_t size = minBytes; size <= maxBytes; size *= stepFactor) {
       count = size / sizeof(float) / totalProcs;
@@ -225,11 +225,11 @@ int main(int argc, char *argv[]) {
           helloFloat[r * count + i] = (float)(proc * 1000 + r * 100 + (int)i);
         }
       }
-      FLAGCXCHECK(devHandle->deviceMemcpy(sendBuff, hello, size,
-                                          flagcxMemcpyHostToDevice, NULL));
+      SDCCLCHECK(devHandle->deviceMemcpy(sendBuff, hello, size,
+                                          sdcclMemcpyHostToDevice, NULL));
       memset(hello, 0, size);
-      FLAGCXCHECK(devHandle->deviceMemcpy(recvBuff, hello, size,
-                                          flagcxMemcpyHostToDevice, NULL));
+      SDCCLCHECK(devHandle->deviceMemcpy(recvBuff, hello, size,
+                                          sdcclMemcpyHostToDevice, NULL));
 
       if (color == 0 && printBuffer && (proc == 0 || proc == totalProcs - 1)) {
         printf("rank%d sendBuff:", proc);
@@ -243,16 +243,16 @@ int main(int argc, char *argv[]) {
 
       tim.reset();
       for (int i = 0; i < numIters; i++) {
-        FLAGCXCHECK(flagcxInterTwoSidedAlltoAll(a2aSendMem, a2aRecvMem, count,
+        SDCCLCHECK(sdcclInterTwoSidedAlltoAll(a2aSendMem, a2aRecvMem, count,
                                                 DATATYPE, a2aDevComm, stream));
       }
-      FLAGCXCHECK(devHandle->streamSynchronize(stream));
+      SDCCLCHECK(devHandle->streamSynchronize(stream));
       double elapsedTime = tim.elapsed() / numIters;
 
       // Verify correctness
       memset(hello, 0, size);
-      FLAGCXCHECK(devHandle->deviceMemcpy(hello, recvBuff, size,
-                                          flagcxMemcpyDeviceToHost, NULL));
+      SDCCLCHECK(devHandle->deviceMemcpy(hello, recvBuff, size,
+                                          sdcclMemcpyDeviceToHost, NULL));
       helloFloat = (float *)hello;
       bool correct = true;
       for (int src = 0; src < totalProcs && correct; src++) {
@@ -290,43 +290,43 @@ int main(int argc, char *argv[]) {
     }
 
     // Cleanup
-    FLAGCXCHECK(flagcxDevMemDestroy(comm, a2aSendMem));
-    FLAGCXCHECK(flagcxDevMemDestroy(comm, a2aRecvMem));
-    FLAGCXCHECK(flagcxDevCommDestroy(comm, a2aDevComm));
+    SDCCLCHECK(sdcclDevMemDestroy(comm, a2aSendMem));
+    SDCCLCHECK(sdcclDevMemDestroy(comm, a2aRecvMem));
+    SDCCLCHECK(sdcclDevCommDestroy(comm, a2aDevComm));
   }
 
   // Destroy stream first (sync any pending work)
-  FLAGCXCHECK(devHandle->streamDestroy(stream));
+  SDCCLCHECK(devHandle->streamDestroy(stream));
 
   // Destroy device memory handles
-  FLAGCXCHECK(flagcxDevMemDestroy(comm, sendMem));
-  FLAGCXCHECK(flagcxDevMemDestroy(comm, recvMem));
+  SDCCLCHECK(sdcclDevMemDestroy(comm, sendMem));
+  SDCCLCHECK(sdcclDevMemDestroy(comm, recvMem));
 
   // Destroy device communicator (before comm destroy)
-  FLAGCXCHECK(flagcxDevCommDestroy(comm, devComm));
+  SDCCLCHECK(sdcclDevCommDestroy(comm, devComm));
 
   // Deregister buffer (before comm destroy)
   if (localRegister == 2) {
-    FLAGCXCHECK(flagcxCommWindowDeregister(comm, sendWin));
-    FLAGCXCHECK(flagcxCommWindowDeregister(comm, recvWin));
+    SDCCLCHECK(sdcclCommWindowDeregister(comm, sendWin));
+    SDCCLCHECK(sdcclCommWindowDeregister(comm, recvWin));
   } else if (localRegister == 1) {
-    FLAGCXCHECK(flagcxCommDeregister(comm, sendHandle));
-    FLAGCXCHECK(flagcxCommDeregister(comm, recvHandle));
+    SDCCLCHECK(sdcclCommDeregister(comm, sendHandle));
+    SDCCLCHECK(sdcclCommDeregister(comm, recvHandle));
   }
 
   // Destroy comm to stop kernel proxy thread BEFORE freeing device memory
-  FLAGCXCHECK(flagcxCommDestroy(comm));
+  SDCCLCHECK(sdcclCommDestroy(comm));
 
   // Free buffer
   if (localRegister >= 1) {
-    FLAGCXCHECK(flagcxMemFree(sendBuff));
-    FLAGCXCHECK(flagcxMemFree(recvBuff));
+    SDCCLCHECK(sdcclMemFree(sendBuff));
+    SDCCLCHECK(sdcclMemFree(recvBuff));
   } else if (localRegister == 0) {
-    FLAGCXCHECK(devHandle->deviceFree(sendBuff, flagcxMemDevice, NULL));
-    FLAGCXCHECK(devHandle->deviceFree(recvBuff, flagcxMemDevice, NULL));
+    SDCCLCHECK(devHandle->deviceFree(sendBuff, sdcclMemDevice, NULL));
+    SDCCLCHECK(devHandle->deviceFree(recvBuff, sdcclMemDevice, NULL));
   }
   free(hello);
-  FLAGCXCHECK(flagcxHandleFree(handler));
+  SDCCLCHECK(sdcclHandleFree(handler));
 
   MPI_Finalize();
   return 0;

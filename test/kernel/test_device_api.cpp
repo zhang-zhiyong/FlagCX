@@ -1,7 +1,7 @@
 /*************************************************************************
  * Copyright (c) 2026 BAAI. All rights reserved.
  *
- * API correctness test for FlagCX inter-node one-sided Device API.
+ * API correctness test for SDCCL inter-node one-sided Device API.
  *
  * Tests ten kernels, each covering one API facet:
  *   K1: putSignalInc          (fused data+signal)
@@ -18,13 +18,13 @@
  * Usage: mpirun -np N ./test_devapi_internode_onesided [options]
  *   -b <minbytes>  -e <maxbytes>  -f <stepfactor>
  *   -w <warmup>    -n <iters>
- *   -R <regMode>   1=IPC(flagcxMemAlloc+CommRegister)
- *                  2=window(flagcxMemAlloc+CommWindowRegister)
+ *   -R <regMode>   1=IPC(sdcclMemAlloc+CommRegister)
+ *                  2=window(sdcclMemAlloc+CommWindowRegister)
  *   One-sided ops require -R 1 or -R 2.
  ************************************************************************/
 
-#include "flagcx.h"
-#include "flagcx_kernel.h"
+#include "sdccl.h"
+#include "sdccl_kernel.h"
 #include "tools.h"
 
 #include <algorithm>
@@ -32,7 +32,7 @@
 #include <cstring>
 #include <unistd.h>
 
-#define DATATYPE flagcxFloat
+#define DATATYPE sdcclFloat
 
 // ---------------------------------------------------------------------------
 // Helper functions (camelCase)
@@ -41,8 +41,8 @@
 // Populate sendbuff: sendbuff[r * countPerPeer + i] = myRank * 1000 + r * 100 +
 // i
 static void initSendBuff(void *sendBuff, size_t countPerPeer, int nRanks,
-                         int myRank, flagcxDeviceHandle_t devHandle,
-                         flagcxStream_t stream, void *hostScratch) {
+                         int myRank, sdcclDeviceHandle_t devHandle,
+                         sdcclStream_t stream, void *hostScratch) {
   float *h = (float *)hostScratch;
   for (int r = 0; r < nRanks; r++)
     for (size_t i = 0; i < countPerPeer; i++)
@@ -50,7 +50,7 @@ static void initSendBuff(void *sendBuff, size_t countPerPeer, int nRanks,
           (float)(myRank * 1000 + r * 100 + (int)i);
   devHandle->deviceMemcpy(sendBuff, hostScratch,
                           (size_t)nRanks * countPerPeer * sizeof(float),
-                          flagcxMemcpyHostToDevice, NULL);
+                          sdcclMemcpyHostToDevice, NULL);
 }
 
 // Verify alltoall result:
@@ -123,11 +123,11 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  flagcxHandlerGroup_t handler;
-  FLAGCXCHECK(flagcxHandleInit(&handler));
-  flagcxUniqueId_t &uniqueId = handler->uniqueId;
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+  sdcclHandlerGroup_t handler;
+  SDCCLCHECK(sdcclHandleInit(&handler));
+  sdcclUniqueId_t &uniqueId = handler->uniqueId;
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   int color = 0;
   int worldSize = 1, worldRank = 0;
@@ -137,21 +137,21 @@ int main(int argc, char *argv[]) {
              splitComm, splitMask);
 
   int nGpu;
-  FLAGCXCHECK(devHandle->getDeviceCount(&nGpu));
-  FLAGCXCHECK(devHandle->setDevice(worldRank % nGpu));
+  SDCCLCHECK(devHandle->getDeviceCount(&nGpu));
+  SDCCLCHECK(devHandle->setDevice(worldRank % nGpu));
 
   if (proc == 0)
-    FLAGCXCHECK(flagcxGetUniqueId(&uniqueId));
-  MPI_Bcast((void *)uniqueId, sizeof(flagcxUniqueId), MPI_BYTE, 0, splitComm);
+    SDCCLCHECK(sdcclGetUniqueId(&uniqueId));
+  MPI_Bcast((void *)uniqueId, sizeof(sdcclUniqueId), MPI_BYTE, 0, splitComm);
   MPI_Barrier(MPI_COMM_WORLD);
 
-  FLAGCXCHECK(flagcxCommInitRank(&comm, totalProcs, uniqueId, proc));
+  SDCCLCHECK(sdcclCommInitRank(&comm, totalProcs, uniqueId, proc));
 
   if (localRegister == 0) {
     if (proc == 0)
       printf("One-sided ops require -R 1 or -R 2. Skipping.\n");
-    FLAGCXCHECK(flagcxCommDestroy(comm));
-    FLAGCXCHECK(flagcxHandleFree(handler));
+    SDCCLCHECK(sdcclCommDestroy(comm));
+    SDCCLCHECK(sdcclHandleFree(handler));
     MPI_Finalize();
     return 0;
   }
@@ -165,23 +165,23 @@ int main(int argc, char *argv[]) {
 
   void *sendBuff = nullptr, *recvBuff = nullptr;
   void *sendHandle = nullptr, *recvHandle = nullptr;
-  flagcxWindow_t sendWin = nullptr, recvWin = nullptr;
+  sdcclWindow_t sendWin = nullptr, recvWin = nullptr;
 
-  FLAGCXCHECK(flagcxMemAlloc(&sendBuff, maxBytes));
-  FLAGCXCHECK(flagcxMemAlloc(&recvBuff, recvBuffSize));
+  SDCCLCHECK(sdcclMemAlloc(&sendBuff, maxBytes));
+  SDCCLCHECK(sdcclMemAlloc(&recvBuff, recvBuffSize));
 
   if (localRegister == 2) {
-    FLAGCXCHECK(flagcxCommWindowRegister(comm, sendBuff, maxBytes, &sendWin,
-                                         FLAGCX_WIN_COLL_SYMMETRIC));
-    FLAGCXCHECK(flagcxCommWindowRegister(comm, recvBuff, recvBuffSize, &recvWin,
-                                         FLAGCX_WIN_COLL_SYMMETRIC));
+    SDCCLCHECK(sdcclCommWindowRegister(comm, sendBuff, maxBytes, &sendWin,
+                                         SDCCL_WIN_COLL_SYMMETRIC));
+    SDCCLCHECK(sdcclCommWindowRegister(comm, recvBuff, recvBuffSize, &recvWin,
+                                         SDCCL_WIN_COLL_SYMMETRIC));
   } else {
-    FLAGCXCHECK(flagcxCommRegister(comm, sendBuff, maxBytes, &sendHandle));
-    FLAGCXCHECK(flagcxCommRegister(comm, recvBuff, recvBuffSize, &recvHandle));
+    SDCCLCHECK(sdcclCommRegister(comm, sendBuff, maxBytes, &sendHandle));
+    SDCCLCHECK(sdcclCommRegister(comm, recvBuff, recvBuffSize, &recvHandle));
   }
 
-  flagcxStream_t stream;
-  FLAGCXCHECK(devHandle->streamCreate(&stream));
+  sdcclStream_t stream;
+  SDCCLCHECK(devHandle->streamCreate(&stream));
 
   // Host scratch buffer — sized to hold recvBuff for D2H copies
   void *hostBuff = malloc(recvBuffSize);
@@ -189,27 +189,27 @@ int main(int argc, char *argv[]) {
 
   // Device result buffer: 4 × uint64_t used by K7 (counter) and K8 (reset)
   uint64_t *dResultBuf = nullptr;
-  FLAGCXCHECK(devHandle->deviceMalloc(
-      (void **)&dResultBuf, 4 * sizeof(uint64_t), flagcxMemDevice, NULL));
+  SDCCLCHECK(devHandle->deviceMalloc(
+      (void **)&dResultBuf, 4 * sizeof(uint64_t), sdcclMemDevice, NULL));
   uint64_t hResultBuf[4] = {};
 
   // Create device communicator
-  flagcxDevCommRequirements reqs = FLAGCX_DEV_COMM_REQUIREMENTS_INITIALIZER;
-  reqs.intraBarrierCount = FLAGCX_DEVICE_CTA_COUNT;
-  reqs.interBarrierCount = FLAGCX_DEVICE_CTA_COUNT;
+  sdcclDevCommRequirements reqs = SDCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.intraBarrierCount = SDCCL_DEVICE_CTA_COUNT;
+  reqs.interBarrierCount = SDCCL_DEVICE_CTA_COUNT;
   reqs.interSignalCount = 3;
   reqs.interCounterCount = 1;
-  flagcxDevComm_t devComm = nullptr;
-  FLAGCXCHECK(flagcxDevCommCreate(comm, &reqs, &devComm));
+  sdcclDevComm_t devComm = nullptr;
+  SDCCLCHECK(sdcclDevCommCreate(comm, &reqs, &devComm));
 
   // Create device memory handles
-  flagcxDevMem_t sendMem = nullptr, recvMem = nullptr;
-  FLAGCXCHECK(flagcxDevMemCreate(comm, sendBuff, maxBytes, sendWin, &sendMem));
-  FLAGCXCHECK(
-      flagcxDevMemCreate(comm, recvBuff, recvBuffSize, recvWin, &recvMem));
+  sdcclDevMem_t sendMem = nullptr, recvMem = nullptr;
+  SDCCLCHECK(sdcclDevMemCreate(comm, sendBuff, maxBytes, sendWin, &sendMem));
+  SDCCLCHECK(
+      sdcclDevMemCreate(comm, recvBuff, recvBuffSize, recvWin, &recvMem));
 
   if (proc == 0 && color == 0) {
-    printf("# FlagCX Device API Test\n");
+    printf("# SDCCL Device API Test\n");
     printf("# nRanks: %d, regMode: %s\n", totalProcs,
            localRegister == 2 ? "window" : "ipc");
     printf("# Kernels: K1=putSignalInc  K2=putSignalAddDecoupled"
@@ -223,14 +223,14 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < numWarmupIters; i++) {
     size_t cp =
         std::max((size_t)1, maxBytes / sizeof(float) / (size_t)totalProcs);
-    FLAGCXCHECK(flagcxInterTestPutSignalInc(sendMem, recvMem, cp, DATATYPE,
+    SDCCLCHECK(sdcclInterTestPutSignalInc(sendMem, recvMem, cp, DATATYPE,
                                             devComm, stream));
   }
-  FLAGCXCHECK(devHandle->streamSynchronize(stream));
+  SDCCLCHECK(devHandle->streamSynchronize(stream));
 
   // Initial K8 reset — establishes clean signal/counter/shadow state
-  FLAGCXCHECK(flagcxInterTestReset(devComm, stream, dResultBuf));
-  FLAGCXCHECK(devHandle->streamSynchronize(stream));
+  SDCCLCHECK(sdcclInterTestReset(devComm, stream, dResultBuf));
+  SDCCLCHECK(devHandle->streamSynchronize(stream));
 
   // Main test loop
   for (size_t size = minBytes; size <= maxBytes; size *= (size_t)stepFactor) {
@@ -247,13 +247,13 @@ int main(int argc, char *argv[]) {
     // --- K1: putSignalInc ---
     initSendBuff(sendBuff, countPerPeer, totalProcs, proc, devHandle, stream,
                  hostBuff);
-    FLAGCXCHECK(
-        devHandle->deviceMemset(recvBuff, 0, floatSize, flagcxMemDevice, NULL));
-    FLAGCXCHECK(flagcxInterTestPutSignalInc(sendMem, recvMem, countPerPeer,
+    SDCCLCHECK(
+        devHandle->deviceMemset(recvBuff, 0, floatSize, sdcclMemDevice, NULL));
+    SDCCLCHECK(sdcclInterTestPutSignalInc(sendMem, recvMem, countPerPeer,
                                             DATATYPE, devComm, stream));
-    FLAGCXCHECK(devHandle->streamSynchronize(stream));
-    FLAGCXCHECK(devHandle->deviceMemcpy(hostBuff, recvBuff, floatSize,
-                                        flagcxMemcpyDeviceToHost, NULL));
+    SDCCLCHECK(devHandle->streamSynchronize(stream));
+    SDCCLCHECK(devHandle->deviceMemcpy(hostBuff, recvBuff, floatSize,
+                                        sdcclMemcpyDeviceToHost, NULL));
     bool k1Ok =
         verifyAlltoAll((const float *)hostBuff, countPerPeer, totalProcs, proc);
     printResult("K1 putSignalInc", k1Ok, proc);
@@ -262,27 +262,27 @@ int main(int argc, char *argv[]) {
     // --- K2: putSignalAddDecoupled ---
     initSendBuff(sendBuff, countPerPeer, totalProcs, proc, devHandle, stream,
                  hostBuff);
-    FLAGCXCHECK(
-        devHandle->deviceMemset(recvBuff, 0, floatSize, flagcxMemDevice, NULL));
-    FLAGCXCHECK(flagcxInterTestPutSignalAddDecoupled(
+    SDCCLCHECK(
+        devHandle->deviceMemset(recvBuff, 0, floatSize, sdcclMemDevice, NULL));
+    SDCCLCHECK(sdcclInterTestPutSignalAddDecoupled(
         sendMem, recvMem, countPerPeer, DATATYPE, devComm, stream));
-    FLAGCXCHECK(devHandle->streamSynchronize(stream));
-    FLAGCXCHECK(devHandle->deviceMemcpy(hostBuff, recvBuff, floatSize,
-                                        flagcxMemcpyDeviceToHost, NULL));
+    SDCCLCHECK(devHandle->streamSynchronize(stream));
+    SDCCLCHECK(devHandle->deviceMemcpy(hostBuff, recvBuff, floatSize,
+                                        sdcclMemcpyDeviceToHost, NULL));
     bool k2Ok =
         verifyAlltoAll((const float *)hostBuff, countPerPeer, totalProcs, proc);
     printResult("K2 putSignalAddDecoupled", k2Ok, proc);
     MPI_Barrier(MPI_COMM_WORLD);
 
     // --- K3: PutValue ---
-    FLAGCXCHECK(devHandle->deviceMemset((char *)recvBuff + putValBase, 0,
+    SDCCLCHECK(devHandle->deviceMemset((char *)recvBuff + putValBase, 0,
                                         (size_t)totalProcs * sizeof(uint64_t),
-                                        flagcxMemDevice, NULL));
-    FLAGCXCHECK(flagcxInterTestPutValue(recvMem, devComm, stream, putValBase));
-    FLAGCXCHECK(devHandle->streamSynchronize(stream));
-    FLAGCXCHECK(devHandle->deviceMemcpy(
+                                        sdcclMemDevice, NULL));
+    SDCCLCHECK(sdcclInterTestPutValue(recvMem, devComm, stream, putValBase));
+    SDCCLCHECK(devHandle->streamSynchronize(stream));
+    SDCCLCHECK(devHandle->deviceMemcpy(
         (char *)hostBuff + putValBase, (char *)recvBuff + putValBase,
-        (size_t)totalProcs * sizeof(uint64_t), flagcxMemcpyDeviceToHost, NULL));
+        (size_t)totalProcs * sizeof(uint64_t), sdcclMemcpyDeviceToHost, NULL));
     bool k3Ok = verifyPutValue(hostBuff, putValBase, totalProcs, proc);
     printResult("K3 PutValue", k3Ok, proc);
     MPI_Barrier(MPI_COMM_WORLD);
@@ -290,72 +290,72 @@ int main(int argc, char *argv[]) {
     // --- K4: Get ---
     initSendBuff(sendBuff, countPerPeer, totalProcs, proc, devHandle, stream,
                  hostBuff);
-    FLAGCXCHECK(
-        devHandle->deviceMemset(recvBuff, 0, floatSize, flagcxMemDevice, NULL));
-    FLAGCXCHECK(flagcxInterTestGet(sendMem, recvMem, countPerPeer, DATATYPE,
+    SDCCLCHECK(
+        devHandle->deviceMemset(recvBuff, 0, floatSize, sdcclMemDevice, NULL));
+    SDCCLCHECK(sdcclInterTestGet(sendMem, recvMem, countPerPeer, DATATYPE,
                                    devComm, stream));
-    FLAGCXCHECK(devHandle->streamSynchronize(stream));
-    FLAGCXCHECK(devHandle->deviceMemcpy(hostBuff, recvBuff, floatSize,
-                                        flagcxMemcpyDeviceToHost, NULL));
+    SDCCLCHECK(devHandle->streamSynchronize(stream));
+    SDCCLCHECK(devHandle->deviceMemcpy(hostBuff, recvBuff, floatSize,
+                                        sdcclMemcpyDeviceToHost, NULL));
     bool k4Ok =
         verifyAlltoAll((const float *)hostBuff, countPerPeer, totalProcs, proc);
     printResult("K4 Get", k4Ok, proc);
     MPI_Barrier(MPI_COMM_WORLD);
 
     // --- K5: Signal ---
-    FLAGCXCHECK(flagcxInterTestSignal(devComm, stream));
-    FLAGCXCHECK(devHandle->streamSynchronize(stream));
+    SDCCLCHECK(sdcclInterTestSignal(devComm, stream));
+    SDCCLCHECK(devHandle->streamSynchronize(stream));
     printResult("K5 Signal", true, proc); // hang-free = PASS
     MPI_Barrier(MPI_COMM_WORLD);
 
     // --- K6: FlushDecouple ---
     initSendBuff(sendBuff, countPerPeer, totalProcs, proc, devHandle, stream,
                  hostBuff);
-    FLAGCXCHECK(
-        devHandle->deviceMemset(recvBuff, 0, floatSize, flagcxMemDevice, NULL));
-    FLAGCXCHECK(flagcxInterTestFlushDecouple(sendMem, recvMem, countPerPeer,
+    SDCCLCHECK(
+        devHandle->deviceMemset(recvBuff, 0, floatSize, sdcclMemDevice, NULL));
+    SDCCLCHECK(sdcclInterTestFlushDecouple(sendMem, recvMem, countPerPeer,
                                              DATATYPE, devComm, stream));
-    FLAGCXCHECK(devHandle->streamSynchronize(stream));
+    SDCCLCHECK(devHandle->streamSynchronize(stream));
     printResult("K6 FlushDecouple", true, proc); // hang-free = PASS
     MPI_Barrier(MPI_COMM_WORLD);
 
     // --- K7: CounterPipeline ---
     initSendBuff(sendBuff, countPerPeer, totalProcs, proc, devHandle, stream,
                  hostBuff);
-    FLAGCXCHECK(
-        devHandle->deviceMemset(recvBuff, 0, floatSize, flagcxMemDevice, NULL));
-    FLAGCXCHECK(flagcxInterTestCounterPipeline(
+    SDCCLCHECK(
+        devHandle->deviceMemset(recvBuff, 0, floatSize, sdcclMemDevice, NULL));
+    SDCCLCHECK(sdcclInterTestCounterPipeline(
         sendMem, recvMem, countPerPeer, DATATYPE, devComm, stream, dResultBuf));
-    FLAGCXCHECK(devHandle->streamSynchronize(stream));
-    FLAGCXCHECK(devHandle->deviceMemcpy(hResultBuf, dResultBuf,
+    SDCCLCHECK(devHandle->streamSynchronize(stream));
+    SDCCLCHECK(devHandle->deviceMemcpy(hResultBuf, dResultBuf,
                                         4 * sizeof(uint64_t),
-                                        flagcxMemcpyDeviceToHost, NULL));
-    FLAGCXCHECK(devHandle->deviceMemcpy(hostBuff, recvBuff, floatSize,
-                                        flagcxMemcpyDeviceToHost, NULL));
+                                        sdcclMemcpyDeviceToHost, NULL));
+    SDCCLCHECK(devHandle->deviceMemcpy(hostBuff, recvBuff, floatSize,
+                                        sdcclMemcpyDeviceToHost, NULL));
     bool k7Ok = verifyCounterPipeline(hResultBuf, (const float *)hostBuff,
                                       countPerPeer, totalProcs);
     printResult("K7 CounterPipeline", k7Ok, proc);
     MPI_Barrier(MPI_COMM_WORLD);
 
     // --- K8: Reset ---
-    FLAGCXCHECK(flagcxInterTestReset(devComm, stream, dResultBuf));
-    FLAGCXCHECK(devHandle->streamSynchronize(stream));
-    FLAGCXCHECK(devHandle->deviceMemcpy(hResultBuf, dResultBuf,
+    SDCCLCHECK(sdcclInterTestReset(devComm, stream, dResultBuf));
+    SDCCLCHECK(devHandle->streamSynchronize(stream));
+    SDCCLCHECK(devHandle->deviceMemcpy(hResultBuf, dResultBuf,
                                         4 * sizeof(uint64_t),
-                                        flagcxMemcpyDeviceToHost, NULL));
+                                        sdcclMemcpyDeviceToHost, NULL));
     bool k8Ok = verifyReset(hResultBuf);
     printResult("K8 Reset", k8Ok, proc);
     MPI_Barrier(MPI_COMM_WORLD);
 
     // --- K9: FollowShadow (§10.3.5 Part B) ---
-    // FLAGCXCHECK(flagcxInterTestFollowShadow(devComm, stream));
-    // FLAGCXCHECK(devHandle->streamSynchronize(stream));
+    // SDCCLCHECK(sdcclInterTestFollowShadow(devComm, stream));
+    // SDCCLCHECK(devHandle->streamSynchronize(stream));
     // printResult("K9 FollowShadow", true, proc); // hang-free = PASS
     // MPI_Barrier(MPI_COMM_WORLD);
 
     // --- K10: MeetShadow (§10.3.5 Part A) ---
-    // FLAGCXCHECK(flagcxInterTestMeetShadow(devComm, stream));
-    // FLAGCXCHECK(devHandle->streamSynchronize(stream));
+    // SDCCLCHECK(sdcclInterTestMeetShadow(devComm, stream));
+    // SDCCLCHECK(devHandle->streamSynchronize(stream));
     // printResult("K10 MeetShadow", true, proc); // hang-free = PASS
     // MPI_Barrier(MPI_COMM_WORLD);
 
@@ -367,25 +367,25 @@ int main(int argc, char *argv[]) {
 
   // Cleanup
   // order matters: stream → devMem → devComm → deregister → comm → buff
-  FLAGCXCHECK(devHandle->streamDestroy(stream));
-  FLAGCXCHECK(devHandle->deviceFree(dResultBuf, flagcxMemDevice, NULL));
-  FLAGCXCHECK(flagcxDevMemDestroy(comm, sendMem));
-  FLAGCXCHECK(flagcxDevMemDestroy(comm, recvMem));
-  FLAGCXCHECK(flagcxDevCommDestroy(comm, devComm));
+  SDCCLCHECK(devHandle->streamDestroy(stream));
+  SDCCLCHECK(devHandle->deviceFree(dResultBuf, sdcclMemDevice, NULL));
+  SDCCLCHECK(sdcclDevMemDestroy(comm, sendMem));
+  SDCCLCHECK(sdcclDevMemDestroy(comm, recvMem));
+  SDCCLCHECK(sdcclDevCommDestroy(comm, devComm));
 
   if (localRegister == 2) {
-    FLAGCXCHECK(flagcxCommWindowDeregister(comm, sendWin));
-    FLAGCXCHECK(flagcxCommWindowDeregister(comm, recvWin));
+    SDCCLCHECK(sdcclCommWindowDeregister(comm, sendWin));
+    SDCCLCHECK(sdcclCommWindowDeregister(comm, recvWin));
   } else {
-    FLAGCXCHECK(flagcxCommDeregister(comm, sendHandle));
-    FLAGCXCHECK(flagcxCommDeregister(comm, recvHandle));
+    SDCCLCHECK(sdcclCommDeregister(comm, sendHandle));
+    SDCCLCHECK(sdcclCommDeregister(comm, recvHandle));
   }
 
-  FLAGCXCHECK(flagcxCommDestroy(comm));
-  FLAGCXCHECK(flagcxMemFree(sendBuff));
-  FLAGCXCHECK(flagcxMemFree(recvBuff));
+  SDCCLCHECK(sdcclCommDestroy(comm));
+  SDCCLCHECK(sdcclMemFree(sendBuff));
+  SDCCLCHECK(sdcclMemFree(recvBuff));
   free(hostBuff);
-  FLAGCXCHECK(flagcxHandleFree(handler));
+  SDCCLCHECK(sdcclHandleFree(handler));
 
   MPI_Finalize();
   return 0;

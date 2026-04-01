@@ -3,8 +3,8 @@
 ### Obtain Source Code
 
 ```
-git clone https://github.com/flagos-ai/FlagCX.git
-cd FlagCX
+git clone https://github.com/flagos-ai/SDCCL.git
+cd SDCCL
 git submodule update --init --recursive
 ```
 
@@ -16,7 +16,7 @@ git submodule update --init --recursive
 pip install . -v --no-build-isolation
 ```
 
-![flagcx_pip_install.png](images/flagcx_pip_install.png)
+![sdccl_pip_install.png](images/sdccl_pip_install.png)
 
 **Option B — C++ library (make):**
 
@@ -105,16 +105,16 @@ Run examples:
 
 ```shell
 # Intra-node AllReduce (single node, 8 GPUs)
-mpirun --allow-run-as-root -np 8 -x FLAGCX_USE_HETERO_COMM=1 -x FLAGCX_MEM_ENABLE=1 ./test_intranode -b 1M -e 64M -f 2
+mpirun --allow-run-as-root -np 8 -x SDCCL_USE_HETERO_COMM=1 -x SDCCL_MEM_ENABLE=1 ./test_intranode -b 1M -e 64M -f 2
 
 # Inter-node two-sided AlltoAll (multi-node)
-mpirun --allow-run-as-root -np 16 -x FLAGCX_USE_HETERO_COMM=1 -x FLAGCX_MEM_ENABLE=1 ./test_internode_twosided -b 1M -e 64M -f 2 -R 1
+mpirun --allow-run-as-root -np 16 -x SDCCL_USE_HETERO_COMM=1 -x SDCCL_MEM_ENABLE=1 ./test_internode_twosided -b 1M -e 64M -f 2 -R 1
 
 # Inter-node one-sided AlltoAll (requires -R 1 or -R 2)
-mpirun --allow-run-as-root -np 16 -x FLAGCX_USE_HETERO_COMM=1 -x FLAGCX_MEM_ENABLE=1 ./test_internode_onesided -b 1M -e 64M -f 2 -R 2
+mpirun --allow-run-as-root -np 16 -x SDCCL_USE_HETERO_COMM=1 -x SDCCL_MEM_ENABLE=1 ./test_internode_onesided -b 1M -e 64M -f 2 -R 2
 
 # Device API correctness test (requires -R 1 or -R 2)
-mpirun --allow-run-as-root -np 16 -x FLAGCX_USE_HETERO_COMM=1 -x FLAGCX_MEM_ENABLE=1 ./test_device_api -b 1M -e 64M -f 2 -R 2
+mpirun --allow-run-as-root -np 16 -x SDCCL_USE_HETERO_COMM=1 -x SDCCL_MEM_ENABLE=1 ./test_device_api -b 1M -e 64M -f 2 -R 2
 ```
 
 Arguments are the same as Performance Test (`-b`, `-e`, `-f`, `-w`, `-n`, `-R`, `-p`, `-s`).
@@ -122,7 +122,7 @@ Arguments are the same as Performance Test (`-b`, `-e`, `-f`, `-w`, `-n`, `-R`, 
 Registration modes (`-R`):
 
 - `-R 0`: Raw device memory (default). No explicit registration.
-- `-R 1`: IPC mode — `flagcxMemAlloc` + `flagcxCommRegister`.
-- `-R 2`: Window mode — `flagcxMemAlloc` + `flagcxCommWindowRegister`.
+- `-R 1`: IPC mode — `sdcclMemAlloc` + `sdcclCommRegister`.
+- `-R 2`: Window mode — `sdcclMemAlloc` + `sdcclCommWindowRegister`.
 
 One-sided tests (`test_internode_onesided`, `test_device_api`) require `-R 1` or `-R 2`.

@@ -1,4 +1,4 @@
-Source: flagcx
+Source: sdccl
 Section: libs
 Priority: optional
 Maintainer: FlagOS Contributors <contact@flagos.io>
@@ -8,9 +8,9 @@ Build-Depends: debhelper-compat (= 13),
                cmake,
                patchelf
 Standards-Version: 4.6.0
-Homepage: https://github.com/flagos-ai/FlagCX
-Vcs-Browser: https://github.com/flagos-ai/FlagCX
-Vcs-Git: https://github.com/flagos-ai/FlagCX.git
+Homepage: https://github.com/flagos-ai/SDCCL
+Vcs-Browser: https://github.com/flagos-ai/SDCCL
+Vcs-Git: https://github.com/flagos-ai/SDCCL.git
 Rules-Requires-Root: no
 X-Build-Environment: This package is designed to be built in backend-specific
  container environments that provide the necessary hardware SDK:
@@ -24,48 +24,48 @@ X-Build-Environment: This package is designed to be built in backend-specific
  The Build-Depends listed above are for the Debian packaging tools only.
  Backend-specific dependencies are provided by the container environment.
 
-Package: libflagcx-metax
-Build-Profiles: <!pkg.flagcx.nvidia-only>
+Package: libsdccl-metax
+Build-Profiles: <!pkg.sdccl.nvidia-only>
 Architecture: amd64
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: FlagCX communication library for MetaX hardware
- FlagCX is a scalable and adaptive cross-chip communication library.
+Description: SDCCL communication library for MetaX hardware
+ SDCCL is a scalable and adaptive cross-chip communication library.
  It serves as a platform where developers, researchers, and AI engineers
  can collaborate on various projects.
  .
  This package contains the shared library built for MetaX hardware with
  MCCL backend support.
 
-Package: libflagcx-metax-dev
-Build-Profiles: <!pkg.flagcx.nvidia-only>
+Package: libsdccl-metax-dev
+Build-Profiles: <!pkg.sdccl.nvidia-only>
 Section: libdevel
 Architecture: amd64
-Depends: libflagcx-metax (= ${binary:Version}), ${misc:Depends}
-Description: FlagCX development files for MetaX hardware
- FlagCX is a scalable and adaptive cross-chip communication library.
+Depends: libsdccl-metax (= ${binary:Version}), ${misc:Depends}
+Description: SDCCL development files for MetaX hardware
+ SDCCL is a scalable and adaptive cross-chip communication library.
  .
  This package contains the header files and development files for
- building applications against libflagcx-metax.
+ building applications against libsdccl-metax.
 
-Package: libflagcx-nvidia
-Build-Profiles: <!pkg.flagcx.metax-only>
+Package: libsdccl-nvidia
+Build-Profiles: <!pkg.sdccl.metax-only>
 Architecture: amd64
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: FlagCX communication library for NVIDIA hardware
- FlagCX is a scalable and adaptive cross-chip communication library.
+Description: SDCCL communication library for NVIDIA hardware
+ SDCCL is a scalable and adaptive cross-chip communication library.
  It serves as a platform where developers, researchers, and AI engineers
  can collaborate on various projects.
  .
  This package contains the shared library built for NVIDIA hardware with
  NCCL backend support.
 
-Package: libflagcx-nvidia-dev
-Build-Profiles: <!pkg.flagcx.metax-only>
+Package: libsdccl-nvidia-dev
+Build-Profiles: <!pkg.sdccl.metax-only>
 Section: libdevel
 Architecture: amd64
-Depends: libflagcx-nvidia (= ${binary:Version}), ${misc:Depends}
-Description: FlagCX development files for NVIDIA hardware
- FlagCX is a scalable and adaptive cross-chip communication library.
+Depends: libsdccl-nvidia (= ${binary:Version}), ${misc:Depends}
+Description: SDCCL development files for NVIDIA hardware
+ SDCCL is a scalable and adaptive cross-chip communication library.
  .
  This package contains the header files and development files for
- building applications against libflagcx-nvidia.
+ building applications against libsdccl-nvidia.

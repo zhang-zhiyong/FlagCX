@@ -1,4 +1,4 @@
-[<img width="2182" height="602" alt="github+banner-20260130" src="https://github.com/flagos-ai/FlagCX/blob/main/.github/assets/banner-20260130.png" />](https://flagos.io/)
+[<img width="2182" height="602" alt="github+banner-20260130" src="https://github.com/flagos-ai/SDCCL/blob/main/.github/assets/banner-20260130.png" />](https://flagos.io/)
 
 <div align="right">
   <a href="https://www.linkedin.com/company/flagos-community" target="_blank">
@@ -6,36 +6,36 @@
   </a>
 
   <a href="https://www.youtube.com/@FlagOS_Official" target="_blank">
-    <img src="https://github.com/flagos-ai/FlagCX/blob/main/docs/assets/youtube.png" alt="YouTube" width="32" height="32" />
+    <img src="https://github.com/flagos-ai/SDCCL/blob/main/docs/assets/youtube.png" alt="YouTube" width="32" height="32" />
   </a>
 
   <a href="https://x.com/FlagOS_Official" target="_blank">
-    <img src="https://github.com/flagos-ai/FlagCX/blob/main/docs/assets/x.png" alt="X" width="32" height="32" />
+    <img src="https://github.com/flagos-ai/SDCCL/blob/main/docs/assets/x.png" alt="X" width="32" height="32" />
   </a>
 
   <a href="https://www.facebook.com/flagosglobalcommunity/" target="_blank">
-    <img src="ihttps://github.com/flagos-ai/FlagCX/blob/main/docs/assets/Facebook.png" alt="Facebook" width="32" height="32" />
+    <img src="ihttps://github.com/flagos-ai/SDCCL/blob/main/docs/assets/Facebook.png" alt="Facebook" width="32" height="32" />
   </a>
 
   <a href="https://discord.com/invite/ubqGuFMTNE" target="_blank">
-    <img src="https://github.com/flagos-ai/FlagCX/blob/main/docs/assets/discord.png" alt="Discord" width="32" height="32" />
+    <img src="https://github.com/flagos-ai/SDCCL/blob/main/docs/assets/discord.png" alt="Discord" width="32" height="32" />
   </a>
 </div>
 
 ## About
 
-FlagCX is part of [FlagOS](https://flagos.io/), a fully open-source system software stack
+SDCCL is part of [FlagOS](https://flagos.io/), a fully open-source system software stack
 designed to unify the model–system–chip layers and foster an open and collaborative ecosystem.
 It enables a "develop once, run anywhere" workflow across diverse AI accelerators,
 unlocking hardware performance, eliminating fragmentation among AI chipset-specific software stacks,
 and substantially lowering the cost of porting and maintaining AI workloads.
 
-[FlagCX](https://github.com/flagos-ai/FlagCX.git) is a scalable and adaptive cross-chip communication library.
+[SDCCL](https://github.com/flagos-ai/SDCCL.git) is a scalable and adaptive cross-chip communication library.
 It serves as a platform where developers, researchers, and AI engineers can collaborate on various projects,
 contribute to the development of cutting-edge AI solutions, and share their work with the global community.
 
-FlagCX leverages native collective communication libraries to provide full single-chip communication support across platforms.
-Beyond its native x-CCL integrations, FlagCX introduces original _device-buffer IPC_ and _device-buffer RDMA_ technologies,
+SDCCL leverages native collective communication libraries to provide full single-chip communication support across platforms.
+Beyond its native x-CCL integrations, SDCCL introduces original _device-buffer IPC_ and _device-buffer RDMA_ technologies,
 enabling high-performance P2P operations for both cross-chip and single-chip scenarios.
 These mechanisms can be seamlessly combined with native x-CCL backends to deliver optimized performance
 for cross-chip collective communications.
@@ -85,17 +85,17 @@ All native collective communications libraries can be referenced through the lin
 - [TCCL](http://www.tsingmicro.com), TsingMicro Communication Collectives Library.
 - [XCCL](WIP), Kunlunxin XPU Collective Communications Library.
 
-Additionally, FlagCX supports three collective communication libraries for host-side communication:
+Additionally, SDCCL supports three collective communication libraries for host-side communication:
 
-- BOOTSTRAP: Host-side communication library built using the FlagCX `bootstrap` component.
+- BOOTSTRAP: Host-side communication library built using the SDCCL `bootstrap` component.
 - [GLOO](https://github.com/facebookincubator/gloo): Gloo Collective Communications Library.
 - [MPI](https://www.mpich.org): Message Passing Interface (MPI) standard.
 
 ### Application Integration
 
-FlagCX integrates with upper-layer applications such as [PyTorch](https://pytorch.org/) and
+SDCCL integrates with upper-layer applications such as [PyTorch](https://pytorch.org/) and
 [PaddlePaddle](https://github.com/PaddlePaddle/).
-The table below lists the frameworks supported by FlagCX and their related communication operations,
+The table below lists the frameworks supported by SDCCL and their related communication operations,
 where the `batch_XXX` and `XXX_coalesced` ops refer to the usage of group primitives.
 
 | Framework                        | PyTorch                      | PaddlePaddle |
@@ -117,31 +117,31 @@ where the `batch_XXX` and `XXX_coalesced` ops refer to the usage of group primit
 | reduce_scatter_tensor_coalesced  | ✓ (in order, no aggregation) | ☓            |
 | scatter                          | ✓                            | ✓            |
 
-Note that PyTorch support is enabled via the FlagCX Torch plugin, which provides native integration with the PyTorch distributed backend.
+Note that PyTorch support is enabled via the SDCCL Torch plugin, which provides native integration with the PyTorch distributed backend.
 This plugin has undergone comprehensive validation across diverse communication backends and hardware platforms,
 ensuring robust functionality, consistent performance, and compatibility in multi-chip heterogeneous environments.
 
-| FlagCX Backend  | NCCL | IXCCL | CNCL | MCCL | XCCL | DUCCL | HCCL | MUSACCL | RCCL | TCCL | ECCL |
+| SDCCL Backend  | NCCL | IXCCL | CNCL | MCCL | XCCL | DUCCL | HCCL | MUSACCL | RCCL | TCCL | ECCL |
 | :-------------- | :--- | :---- | :--- | :--- | :--- | :---- | :--- | :------ | :--- | :--- | :--- |
 | PyTorch Support | ✓    | ✓     | ✓    | ✓    | ✓    | ✓     | ✓    | ✓       | ✓    | ✓    |✓    |
 
 > [!TIP]
-> To enable heterogeneous cross-chip communication using the PyTorch DDP FlagCX backend,
+> To enable heterogeneous cross-chip communication using the PyTorch DDP SDCCL backend,
 > it is recommended to use identical PyTorch versions across all nodes.
 > Mismatched versions may lead to initialization failures during process group setup.
 > Helpful advice for doing things better or more easily.
 
 ### Training Models
 
-After building and testing FlagCX, you can start training models using upper-layer deep learning frameworks
+After building and testing SDCCL, you can start training models using upper-layer deep learning frameworks
 such as [PyTorch](https://pytorch.org) or [PaddlePaddle](https://github.com/PaddlePaddle)
-using FlagCX as the communication backend.
+using SDCCL as the communication backend.
 We provide detailed user guides for both **homogeneous** and **heterogeneous** training across different hardware platforms.
 Please refer to the docs below:  
 
 <!--TODO(Qiming): Revise the directory layout-->
-- [Training Models with PyTorch and FlagCX](./docs/user_guide.md).
-- [Training Models with Paddle and FlagCX](./docs/paddle/README.md).
+- [Training Models with PyTorch and SDCCL](./docs/user_guide.md).
+- [Training Models with Paddle and SDCCL](./docs/paddle/README.md).
 
 ## Contribution
 

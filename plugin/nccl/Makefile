@@ -1,7 +1,7 @@
-# NCCL Wrapper for FlagCX
-# Produces libnccl.so that wraps NCCL API via FlagCX
+# NCCL Wrapper for SDCCL
+# Produces libnccl.so that wraps NCCL API via SDCCL
 
-FLAGCX_HOME ?= $(abspath ../..)
+SDCCL_HOME ?= $(abspath ../..)
 CUDA_HOME   ?= /usr/local/cuda
 NCCL_HOME     ?= /usr/local/nccl
 REAL_NCCL_LIB ?= $(NCCL_HOME)/lib/libnccl.so.2
@@ -20,13 +20,13 @@ CXX      := g++
 CXXFLAGS := -fPIC -fvisibility=default -std=c++11 -Wall -Wno-sign-compare -O2 -g \
             -DREAL_NCCL_PATH=\"$(REAL_NCCL_LIB)\"
 INCLUDES := -I$(NCCL_HOME)/include \
-            -I$(FLAGCX_HOME)/flagcx/include \
+            -I$(SDCCL_HOME)/sdccl/include \
             -I$(CUDA_HOME)/include
 LDFLAGS  := -shared \
-            -L$(FLAGCX_HOME)/build/lib -lflagcx \
+            -L$(SDCCL_HOME)/build/lib -lsdccl \
             -L$(CUDA_HOME)/lib64 -lcudart \
             -ldl \
-            -Wl,-rpath,$(FLAGCX_HOME)/build/lib \
+            -Wl,-rpath,$(SDCCL_HOME)/build/lib \
             -Wl,-rpath,$(CUDA_HOME)/lib64
 
 .PHONY: all clean

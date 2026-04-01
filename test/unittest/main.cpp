@@ -1,6 +1,6 @@
-#include "flagcx_coll_test.hpp"
-#include "flagcx_kernel_test.hpp"
-#include "flagcx_topo_test.hpp"
+#include "sdccl_coll_test.hpp"
+#include "sdccl_kernel_test.hpp"
+#include "sdccl_topo_test.hpp"
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -11,16 +11,16 @@
 #define BASELINE_FILE "baseline_result.txt"
 #define NUM_BASELINE_ENTRIES 1000
 
-TEST_F(FlagCXCollTest, AllReduce) {
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+TEST_F(SDCCLCollTest, AllReduce) {
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   for (size_t i = 0; i < count; i++) {
     ((float *)hostsendbuff)[i] = i % 10;
   }
 
   devHandle->deviceMemcpy(sendbuff, hostsendbuff, size,
-                          flagcxMemcpyHostToDevice, stream);
+                          sdcclMemcpyHostToDevice, stream);
 
   if (rank == 0) {
     std::cout << "sendbuff = ";
@@ -32,11 +32,11 @@ TEST_F(FlagCXCollTest, AllReduce) {
 
   MPI_Barrier(MPI_COMM_WORLD);
 
-  flagcxAllReduce(sendbuff, recvbuff, count, flagcxFloat, flagcxSum, comm,
+  sdcclAllReduce(sendbuff, recvbuff, count, sdcclFloat, sdcclSum, comm,
                   stream);
 
   devHandle->deviceMemcpy(hostrecvbuff, recvbuff, size,
-                          flagcxMemcpyDeviceToHost, stream);
+                          sdcclMemcpyDeviceToHost, stream);
 
   devHandle->streamSynchronize(stream);
 
@@ -59,16 +59,16 @@ TEST_F(FlagCXCollTest, AllReduce) {
             0);
 }
 
-TEST_F(FlagCXCollTest, AllGather) {
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+TEST_F(SDCCLCollTest, AllGather) {
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   for (size_t i = 0; i < count; i++) {
     ((float *)hostsendbuff)[i] = i % 10;
   }
 
   devHandle->deviceMemcpy(sendbuff, hostsendbuff, size / nranks,
-                          flagcxMemcpyHostToDevice, stream);
+                          sdcclMemcpyHostToDevice, stream);
 
   if (rank == 0) {
     std::cout << "sendbuff = ";
@@ -80,11 +80,11 @@ TEST_F(FlagCXCollTest, AllGather) {
 
   MPI_Barrier(MPI_COMM_WORLD);
 
-  flagcxAllGather(sendbuff, recvbuff, count / nranks, flagcxFloat, comm,
+  sdcclAllGather(sendbuff, recvbuff, count / nranks, sdcclFloat, comm,
                   stream);
 
   devHandle->deviceMemcpy(hostrecvbuff, recvbuff, size,
-                          flagcxMemcpyDeviceToHost, stream);
+                          sdcclMemcpyDeviceToHost, stream);
 
   devHandle->streamSynchronize(stream);
 
@@ -105,16 +105,16 @@ TEST_F(FlagCXCollTest, AllGather) {
             0);
 }
 
-TEST_F(FlagCXCollTest, ReduceScatter) {
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+TEST_F(SDCCLCollTest, ReduceScatter) {
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   for (size_t i = 0; i < count; i++) {
     ((float *)hostsendbuff)[i] = i % 10;
   }
 
   devHandle->deviceMemcpy(sendbuff, hostsendbuff, size,
-                          flagcxMemcpyHostToDevice, stream);
+                          sdcclMemcpyHostToDevice, stream);
 
   if (rank == 0) {
     std::cout << "sendbuff = ";
@@ -126,11 +126,11 @@ TEST_F(FlagCXCollTest, ReduceScatter) {
 
   MPI_Barrier(MPI_COMM_WORLD);
 
-  flagcxReduceScatter(sendbuff, recvbuff, count / nranks, flagcxFloat,
-                      flagcxSum, comm, stream);
+  sdcclReduceScatter(sendbuff, recvbuff, count / nranks, sdcclFloat,
+                      sdcclSum, comm, stream);
 
   devHandle->deviceMemcpy(hostrecvbuff, recvbuff, size / nranks,
-                          flagcxMemcpyDeviceToHost, stream);
+                          sdcclMemcpyDeviceToHost, stream);
 
   devHandle->streamSynchronize(stream);
 
@@ -149,16 +149,16 @@ TEST_F(FlagCXCollTest, ReduceScatter) {
             0);
 }
 
-TEST_F(FlagCXCollTest, Reduce) {
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+TEST_F(SDCCLCollTest, Reduce) {
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   for (size_t i = 0; i < count; i++) {
     ((float *)hostsendbuff)[i] = i % 10;
   }
 
   devHandle->deviceMemcpy(sendbuff, hostsendbuff, size,
-                          flagcxMemcpyHostToDevice, stream);
+                          sdcclMemcpyHostToDevice, stream);
 
   if (rank == 0) {
     std::cout << "sendbuff = ";
@@ -170,11 +170,11 @@ TEST_F(FlagCXCollTest, Reduce) {
 
   MPI_Barrier(MPI_COMM_WORLD);
 
-  flagcxReduce(sendbuff, recvbuff, count, flagcxFloat, flagcxSum, 0, comm,
+  sdcclReduce(sendbuff, recvbuff, count, sdcclFloat, sdcclSum, 0, comm,
                stream);
 
   devHandle->deviceMemcpy(hostrecvbuff, recvbuff, size,
-                          flagcxMemcpyDeviceToHost, stream);
+                          sdcclMemcpyDeviceToHost, stream);
 
   devHandle->streamSynchronize(stream);
 
@@ -193,16 +193,16 @@ TEST_F(FlagCXCollTest, Reduce) {
             0);
 }
 
-TEST_F(FlagCXCollTest, Gather) {
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+TEST_F(SDCCLCollTest, Gather) {
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   for (size_t i = 0; i < count; i++) {
     ((float *)hostsendbuff)[i] = i % 10;
   }
 
   devHandle->deviceMemcpy(sendbuff, hostsendbuff, size / nranks,
-                          flagcxMemcpyHostToDevice, stream);
+                          sdcclMemcpyHostToDevice, stream);
 
   if (rank == 0) {
     std::cout << "sendbuff  = ";
@@ -214,11 +214,11 @@ TEST_F(FlagCXCollTest, Gather) {
 
   MPI_Barrier(MPI_COMM_WORLD);
 
-  flagcxGather(sendbuff, recvbuff, count / nranks, flagcxFloat, 0, comm,
+  sdcclGather(sendbuff, recvbuff, count / nranks, sdcclFloat, 0, comm,
                stream);
 
   devHandle->deviceMemcpy(hostrecvbuff, recvbuff, size,
-                          flagcxMemcpyDeviceToHost, stream);
+                          sdcclMemcpyDeviceToHost, stream);
 
   devHandle->streamSynchronize(stream);
 
@@ -239,9 +239,9 @@ TEST_F(FlagCXCollTest, Gather) {
             0);
 }
 
-TEST_F(FlagCXCollTest, Scatter) {
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+TEST_F(SDCCLCollTest, Scatter) {
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   if (rank == 0) {
     for (size_t i = 0; i < count; i++) {
@@ -249,7 +249,7 @@ TEST_F(FlagCXCollTest, Scatter) {
     }
 
     devHandle->deviceMemcpy(sendbuff, hostsendbuff, size,
-                            flagcxMemcpyHostToDevice, stream);
+                            sdcclMemcpyHostToDevice, stream);
 
     std::cout << "sendbuff = ";
     for (size_t i = 0; i < 10; i++) {
@@ -260,11 +260,11 @@ TEST_F(FlagCXCollTest, Scatter) {
 
   MPI_Barrier(MPI_COMM_WORLD);
 
-  flagcxScatter(sendbuff, recvbuff, count / nranks, flagcxFloat, 0, comm,
+  sdcclScatter(sendbuff, recvbuff, count / nranks, sdcclFloat, 0, comm,
                 stream);
 
   devHandle->deviceMemcpy(hostrecvbuff, recvbuff, size / nranks,
-                          flagcxMemcpyDeviceToHost, stream);
+                          sdcclMemcpyDeviceToHost, stream);
 
   devHandle->streamSynchronize(stream);
 
@@ -283,15 +283,15 @@ TEST_F(FlagCXCollTest, Scatter) {
             0);
 }
 
-TEST_F(FlagCXCollTest, Broadcast) {
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+TEST_F(SDCCLCollTest, Broadcast) {
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   for (size_t i = 0; i < count; i++) {
     ((float *)hostsendbuff)[i] = i % 10;
   }
   devHandle->deviceMemcpy(sendbuff, hostsendbuff, size,
-                          flagcxMemcpyHostToDevice, stream);
+                          sdcclMemcpyHostToDevice, stream);
 
   if (rank == 0) {
     std::cout << "sendbuff = ";
@@ -303,10 +303,10 @@ TEST_F(FlagCXCollTest, Broadcast) {
 
   MPI_Barrier(MPI_COMM_WORLD);
 
-  flagcxBroadcast(sendbuff, recvbuff, count, flagcxFloat, 0, comm, stream);
+  sdcclBroadcast(sendbuff, recvbuff, count, sdcclFloat, 0, comm, stream);
 
   devHandle->deviceMemcpy(hostrecvbuff, recvbuff, size,
-                          flagcxMemcpyDeviceToHost, stream);
+                          sdcclMemcpyDeviceToHost, stream);
 
   devHandle->streamSynchronize(stream);
 
@@ -325,55 +325,55 @@ TEST_F(FlagCXCollTest, Broadcast) {
             0);
 }
 
-TEST_F(FlagCXTopoTest, TopoDetection) {
-  flagcxComm_t &comm = handler->comm;
-  flagcxUniqueId_t &uniqueId = handler->uniqueId;
+TEST_F(SDCCLTopoTest, TopoDetection) {
+  sdcclComm_t &comm = handler->comm;
+  sdcclUniqueId_t &uniqueId = handler->uniqueId;
 
-  std::cout << "executing flagcxCommInitRank" << std::endl;
-  auto result = flagcxCommInitRank(&comm, nranks, uniqueId, rank);
-  EXPECT_EQ(result, flagcxSuccess);
+  std::cout << "executing sdcclCommInitRank" << std::endl;
+  auto result = sdcclCommInitRank(&comm, nranks, uniqueId, rank);
+  EXPECT_EQ(result, sdcclSuccess);
 }
 
 // ---------------------------------------------------------------------------
 // Intra-node AllReduce: each rank fills with (rank+1), verify sum
 // ---------------------------------------------------------------------------
-TEST_F(FlagCXKernelTest, IntraAllReduce) {
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+TEST_F(SDCCLKernelTest, IntraAllReduce) {
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   // Allocate a separate buffer for the kernel (aligned with
   // test_kernel_intranode -R 0)
   void *regBuff = nullptr;
-  devHandle->deviceMalloc(&regBuff, size, flagcxMemDevice, NULL);
+  devHandle->deviceMalloc(&regBuff, size, sdcclMemDevice, NULL);
 
   // Initialize: each rank fills with (rank + 1)
   for (size_t i = 0; i < count; i++) {
     ((float *)hostsendbuff)[i] = (float)(rank + 1);
   }
-  devHandle->deviceMemcpy(regBuff, hostsendbuff, size, flagcxMemcpyHostToDevice,
+  devHandle->deviceMemcpy(regBuff, hostsendbuff, size, sdcclMemcpyHostToDevice,
                           NULL);
 
   MPI_Barrier(MPI_COMM_WORLD);
 
   // Create device communicator with intra barriers
-  flagcxDevCommRequirements reqs = FLAGCX_DEV_COMM_REQUIREMENTS_INITIALIZER;
-  reqs.intraBarrierCount = FLAGCX_DEVICE_CTA_COUNT;
-  flagcxDevComm_t devComm = nullptr;
-  ASSERT_EQ(flagcxDevCommCreate(comm, &reqs, &devComm), flagcxSuccess);
+  sdcclDevCommRequirements reqs = SDCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.intraBarrierCount = SDCCL_DEVICE_CTA_COUNT;
+  sdcclDevComm_t devComm = nullptr;
+  ASSERT_EQ(sdcclDevCommCreate(comm, &reqs, &devComm), sdcclSuccess);
 
-  // Create device memory handle (implicit IPC via flagcxDevMemCreate)
-  flagcxDevMem_t devMem = nullptr;
-  ASSERT_EQ(flagcxDevMemCreate(comm, regBuff, size, NULL, &devMem),
-            flagcxSuccess);
+  // Create device memory handle (implicit IPC via sdcclDevMemCreate)
+  sdcclDevMem_t devMem = nullptr;
+  ASSERT_EQ(sdcclDevMemCreate(comm, regBuff, size, NULL, &devMem),
+            sdcclSuccess);
 
   // Run AllReduce
-  flagcxResult_t result =
-      flagcxIntraAllReduce(devMem, count, flagcxFloat, devComm, stream);
+  sdcclResult_t result =
+      sdcclIntraAllReduce(devMem, count, sdcclFloat, devComm, stream);
   devHandle->streamSynchronize(stream);
-  EXPECT_EQ(result, flagcxSuccess);
+  EXPECT_EQ(result, sdcclSuccess);
 
   // Copy results back from regBuff
-  devHandle->deviceMemcpy(hostrecvbuff, regBuff, size, flagcxMemcpyDeviceToHost,
+  devHandle->deviceMemcpy(hostrecvbuff, regBuff, size, sdcclMemcpyDeviceToHost,
                           NULL);
 
   // Verify: expected = nranks*(nranks+1)/2
@@ -392,17 +392,17 @@ TEST_F(FlagCXKernelTest, IntraAllReduce) {
   EXPECT_TRUE(success);
 
   // Cleanup
-  flagcxDevMemDestroy(comm, devMem);
-  flagcxDevCommDestroy(comm, devComm);
-  devHandle->deviceFree(regBuff, flagcxMemDevice, NULL);
+  sdcclDevMemDestroy(comm, devMem);
+  sdcclDevCommDestroy(comm, devComm);
+  devHandle->deviceFree(regBuff, sdcclMemDevice, NULL);
 }
 
 // ---------------------------------------------------------------------------
 // Inter-node AlltoAll: two-sided send/recv via FIFO
 // ---------------------------------------------------------------------------
-TEST_F(FlagCXKernelTest, InterTwoSidedAlltoAll) {
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+TEST_F(SDCCLKernelTest, InterTwoSidedAlltoAll) {
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   // count per peer
   size_t countPerPeer = count / nranks;
@@ -413,40 +413,40 @@ TEST_F(FlagCXKernelTest, InterTwoSidedAlltoAll) {
   }
 
   devHandle->deviceMemcpy(sendbuff, hostsendbuff, size,
-                          flagcxMemcpyHostToDevice, NULL);
+                          sdcclMemcpyHostToDevice, NULL);
 
   MPI_Barrier(MPI_COMM_WORLD);
 
   // Create device communicator
-  // Request inter barriers — needed by flagcxInterBarrierSession in the kernel
-  flagcxDevCommRequirements reqs = FLAGCX_DEV_COMM_REQUIREMENTS_INITIALIZER;
-  reqs.interBarrierCount = FLAGCX_DEVICE_CTA_COUNT;
-  flagcxDevComm_t devComm = nullptr;
-  ASSERT_EQ(flagcxDevCommCreate(comm, &reqs, &devComm), flagcxSuccess);
+  // Request inter barriers — needed by sdcclInterBarrierSession in the kernel
+  sdcclDevCommRequirements reqs = SDCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.interBarrierCount = SDCCL_DEVICE_CTA_COUNT;
+  sdcclDevComm_t devComm = nullptr;
+  ASSERT_EQ(sdcclDevCommCreate(comm, &reqs, &devComm), sdcclSuccess);
 
   // Create raw device memory handles for send/recv buffers
-  flagcxDevMem_t sendMem = nullptr, recvMem = nullptr;
-  ASSERT_EQ(flagcxDevMemCreate(comm, sendbuff, size, NULL, &sendMem),
-            flagcxSuccess);
-  ASSERT_EQ(flagcxDevMemCreate(comm, recvbuff, size, NULL, &recvMem),
-            flagcxSuccess);
+  sdcclDevMem_t sendMem = nullptr, recvMem = nullptr;
+  ASSERT_EQ(sdcclDevMemCreate(comm, sendbuff, size, NULL, &sendMem),
+            sdcclSuccess);
+  ASSERT_EQ(sdcclDevMemCreate(comm, recvbuff, size, NULL, &recvMem),
+            sdcclSuccess);
 
   // Launch AlltoAll kernel
-  flagcxResult_t result = flagcxInterTwoSidedAlltoAll(
-      sendMem, recvMem, countPerPeer, flagcxFloat, devComm, stream);
+  sdcclResult_t result = sdcclInterTwoSidedAlltoAll(
+      sendMem, recvMem, countPerPeer, sdcclFloat, devComm, stream);
   devHandle->streamSynchronize(stream);
-  EXPECT_EQ(result, flagcxSuccess);
+  EXPECT_EQ(result, sdcclSuccess);
 
   // Destroy raw device memory handles
-  flagcxDevMemDestroy(comm, sendMem);
-  flagcxDevMemDestroy(comm, recvMem);
+  sdcclDevMemDestroy(comm, sendMem);
+  sdcclDevMemDestroy(comm, recvMem);
 
   // Destroy device communicator
-  flagcxDevCommDestroy(comm, devComm);
+  sdcclDevCommDestroy(comm, devComm);
 
   // Copy results back
   devHandle->deviceMemcpy(hostrecvbuff, recvbuff, size,
-                          flagcxMemcpyDeviceToHost, NULL);
+                          sdcclMemcpyDeviceToHost, NULL);
 
   MPI_Barrier(MPI_COMM_WORLD);
 
@@ -470,62 +470,62 @@ TEST_F(FlagCXKernelTest, InterTwoSidedAlltoAll) {
 // ---------------------------------------------------------------------------
 // Inter-node one-sided AlltoAll: put + waitSignal + flush
 // ---------------------------------------------------------------------------
-TEST_F(FlagCXKernelTest, InterOneSidedAlltoAll) {
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+TEST_F(SDCCLKernelTest, InterOneSidedAlltoAll) {
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   size_t countPerPeer = count / nranks;
 
   // One-sided needs VMM memory + RDMA registration.
   // Allocate separate buffers (fixture's sendbuff/recvbuff stay untouched).
   void *osSend = nullptr, *osRecv = nullptr;
-  ASSERT_EQ(flagcxMemAlloc(&osSend, size), flagcxSuccess);
-  ASSERT_EQ(flagcxMemAlloc(&osRecv, size), flagcxSuccess);
+  ASSERT_EQ(sdcclMemAlloc(&osSend, size), sdcclSuccess);
+  ASSERT_EQ(sdcclMemAlloc(&osRecv, size), sdcclSuccess);
 
   void *sendRegHandle = nullptr, *recvRegHandle = nullptr;
-  ASSERT_EQ(flagcxCommRegister(comm, osSend, size, &sendRegHandle),
-            flagcxSuccess);
-  ASSERT_EQ(flagcxCommRegister(comm, osRecv, size, &recvRegHandle),
-            flagcxSuccess);
+  ASSERT_EQ(sdcclCommRegister(comm, osSend, size, &sendRegHandle),
+            sdcclSuccess);
+  ASSERT_EQ(sdcclCommRegister(comm, osRecv, size, &recvRegHandle),
+            sdcclSuccess);
 
   // Initialize sendbuff: all elements = rank
   for (size_t i = 0; i < count; i++) {
     ((float *)hostsendbuff)[i] = (float)rank;
   }
-  devHandle->deviceMemcpy(osSend, hostsendbuff, size, flagcxMemcpyHostToDevice,
+  devHandle->deviceMemcpy(osSend, hostsendbuff, size, sdcclMemcpyHostToDevice,
                           NULL);
 
   MPI_Barrier(MPI_COMM_WORLD);
 
   // Create device communicator with inter-node barrier + signal
-  flagcxDevCommRequirements reqs = FLAGCX_DEV_COMM_REQUIREMENTS_INITIALIZER;
-  reqs.interBarrierCount = FLAGCX_DEVICE_CTA_COUNT;
+  sdcclDevCommRequirements reqs = SDCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.interBarrierCount = SDCCL_DEVICE_CTA_COUNT;
   reqs.interSignalCount = 1;
-  flagcxDevComm_t devComm = nullptr;
-  ASSERT_EQ(flagcxDevCommCreate(comm, &reqs, &devComm), flagcxSuccess);
+  sdcclDevComm_t devComm = nullptr;
+  ASSERT_EQ(sdcclDevCommCreate(comm, &reqs, &devComm), sdcclSuccess);
 
   // Create device memory handles
-  flagcxDevMem_t sendMem = nullptr, recvMem = nullptr;
-  ASSERT_EQ(flagcxDevMemCreate(comm, osSend, size, NULL, &sendMem),
-            flagcxSuccess);
-  ASSERT_EQ(flagcxDevMemCreate(comm, osRecv, size, NULL, &recvMem),
-            flagcxSuccess);
+  sdcclDevMem_t sendMem = nullptr, recvMem = nullptr;
+  ASSERT_EQ(sdcclDevMemCreate(comm, osSend, size, NULL, &sendMem),
+            sdcclSuccess);
+  ASSERT_EQ(sdcclDevMemCreate(comm, osRecv, size, NULL, &recvMem),
+            sdcclSuccess);
 
   // Launch one-sided AlltoAll
-  flagcxResult_t result = flagcxInterOneSidedAlltoAll(
-      sendMem, recvMem, countPerPeer, flagcxFloat, devComm, stream);
+  sdcclResult_t result = sdcclInterOneSidedAlltoAll(
+      sendMem, recvMem, countPerPeer, sdcclFloat, devComm, stream);
   devHandle->streamSynchronize(stream);
-  EXPECT_EQ(result, flagcxSuccess);
+  EXPECT_EQ(result, sdcclSuccess);
 
   // Destroy device memory handles
-  flagcxDevMemDestroy(comm, sendMem);
-  flagcxDevMemDestroy(comm, recvMem);
+  sdcclDevMemDestroy(comm, sendMem);
+  sdcclDevMemDestroy(comm, recvMem);
 
   // Destroy device communicator
-  flagcxDevCommDestroy(comm, devComm);
+  sdcclDevCommDestroy(comm, devComm);
 
   // Copy results back from osRecv
-  devHandle->deviceMemcpy(hostrecvbuff, osRecv, size, flagcxMemcpyDeviceToHost,
+  devHandle->deviceMemcpy(hostrecvbuff, osRecv, size, sdcclMemcpyDeviceToHost,
                           NULL);
 
   MPI_Barrier(MPI_COMM_WORLD);
@@ -547,10 +547,10 @@ TEST_F(FlagCXKernelTest, InterOneSidedAlltoAll) {
   EXPECT_TRUE(success);
 
   // Cleanup one-sided buffers
-  flagcxCommDeregister(comm, sendRegHandle);
-  flagcxCommDeregister(comm, recvRegHandle);
-  flagcxMemFree(osSend);
-  flagcxMemFree(osRecv);
+  sdcclCommDeregister(comm, sendRegHandle);
+  sdcclCommDeregister(comm, recvRegHandle);
+  sdcclMemFree(osSend);
+  sdcclMemFree(osRecv);
 }
 
 int main(int argc, char *argv[]) {

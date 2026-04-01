@@ -1,5 +1,5 @@
-#include "flagcx.h"
-#include "flagcx_kernel.h"
+#include "sdccl.h"
+#include "sdccl_kernel.h"
 #include "tools.h"
 
 #include <algorithm>
@@ -14,8 +14,8 @@
 
 namespace {
 
-void fatal(flagcxResult_t res, const char *msg, int rank) {
-  if (res != flagcxSuccess) {
+void fatal(sdcclResult_t res, const char *msg, int rank) {
+  if (res != sdcclSuccess) {
     fprintf(stderr, "[rank %d] %s (err=%d)\n", rank, msg, int(res));
     MPI_Abort(MPI_COMM_WORLD, res);
   }
@@ -33,18 +33,18 @@ int main(int argc, char *argv[]) {
   uint64_t split_mask = args.getSplitMask();
   int local_register = args.getLocalRegister();
 
-  // RMA requires flagcxMemAlloc (GDR memory with SYNC_MEMOPS)
+  // RMA requires sdcclMemAlloc (GDR memory with SYNC_MEMOPS)
   if (local_register < 1) {
     fprintf(stderr,
             "test_put requires -R 1 or -R 2 for GDR buffer allocation.\n");
     return 1;
   }
 
-  flagcxHandlerGroup_t handler;
-  flagcxHandleInit(&handler);
-  flagcxUniqueId_t &uniqueId = handler->uniqueId;
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+  sdcclHandlerGroup_t handler;
+  sdcclHandleInit(&handler);
+  sdcclUniqueId_t &uniqueId = handler->uniqueId;
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   int color = 0;
   int worldSize = 1, worldRank = 0;
@@ -58,21 +58,21 @@ int main(int argc, char *argv[]) {
   devHandle->setDevice(worldRank % nGpu);
 
   if (proc == 0)
-    flagcxGetUniqueId(&uniqueId);
-  MPI_Bcast((void *)uniqueId, sizeof(flagcxUniqueId), MPI_BYTE, 0, splitComm);
+    sdcclGetUniqueId(&uniqueId);
+  MPI_Bcast((void *)uniqueId, sizeof(sdcclUniqueId), MPI_BYTE, 0, splitComm);
   MPI_Barrier(MPI_COMM_WORLD);
 
-  flagcxCommInitRank(&comm, totalProcs, uniqueId, proc);
+  sdcclCommInitRank(&comm, totalProcs, uniqueId, proc);
 
   int isHomo = 0;
-  flagcxIsHomoComm(comm, &isHomo);
+  sdcclIsHomoComm(comm, &isHomo);
   if (isHomo) {
     if (proc == 0)
       printf("Skipping put benchmark: hetero communicator not initialised "
              "(isHomo=%d).\n",
              isHomo);
-    flagcxCommDestroy(comm);
-    flagcxHandleFree(handler);
+    sdcclCommDestroy(comm);
+    sdcclHandleFree(handler);
     MPI_Finalize();
     return 0;
   }
@@ -96,7 +96,7 @@ int main(int argc, char *argv[]) {
   bool isSender = (proc == senderRank);
   bool isReceiver = (proc == receiverRank);
 
-  flagcxResult_t res;
+  sdcclResult_t res;
 
   size_t signalBytes = sizeof(uint64_t);
   size_t total_iters_per_size = num_warmup_iters + num_iters;
@@ -106,66 +106,66 @@ int main(int argc, char *argv[]) {
 
   // Data buffer: GDR memory (SYNC_MEMOPS ensures NIC visibility via GDR BAR)
   void *dataWindow = nullptr;
-  res = flagcxMemAlloc(&dataWindow, data_bytes);
-  if (res != flagcxSuccess || dataWindow == nullptr) {
-    fprintf(stderr, "[rank %d] flagcxMemAlloc failed for data (size=%zu)\n",
+  res = sdcclMemAlloc(&dataWindow, data_bytes);
+  if (res != sdcclSuccess || dataWindow == nullptr) {
+    fprintf(stderr, "[rank %d] sdcclMemAlloc failed for data (size=%zu)\n",
             proc, data_bytes);
     MPI_Abort(MPI_COMM_WORLD, 1);
   }
-  devHandle->deviceMemset(dataWindow, 0, data_bytes, flagcxMemDevice, NULL);
+  devHandle->deviceMemset(dataWindow, 0, data_bytes, sdcclMemDevice, NULL);
 
   // Signal buffer: GDR memory (SYNC_MEMOPS for RDMA ATOMIC visibility)
   void *signalWindow = nullptr;
-  res = flagcxMemAlloc(&signalWindow, signal_total_bytes);
-  if (res != flagcxSuccess || signalWindow == nullptr) {
-    fprintf(stderr, "[rank %d] flagcxMemAlloc failed for signal (size=%zu)\n",
+  res = sdcclMemAlloc(&signalWindow, signal_total_bytes);
+  if (res != sdcclSuccess || signalWindow == nullptr) {
+    fprintf(stderr, "[rank %d] sdcclMemAlloc failed for signal (size=%zu)\n",
             proc, signal_total_bytes);
     MPI_Abort(MPI_COMM_WORLD, 1);
   }
-  devHandle->deviceMemset(signalWindow, 0, signal_total_bytes, flagcxMemDevice,
+  devHandle->deviceMemset(signalWindow, 0, signal_total_bytes, sdcclMemDevice,
                           NULL);
 
   // Register data buffer in global reg pool
   void *dataHandle = nullptr;
-  res = flagcxCommRegister(comm, dataWindow, data_bytes, &dataHandle);
-  fatal(res, "flagcxCommRegister (data) failed", proc);
+  res = sdcclCommRegister(comm, dataWindow, data_bytes, &dataHandle);
+  fatal(res, "sdcclCommRegister (data) failed", proc);
 
   // Register data buffer for one-sided operations
-  res = flagcxOneSideRegister(comm, dataWindow, data_bytes);
-  if (res == flagcxNotSupported) {
+  res = sdcclOneSideRegister(comm, dataWindow, data_bytes);
+  if (res == sdcclNotSupported) {
     if (proc == 0)
       printf("Skipping put benchmark: net adaptor does not support iput.\n");
-    flagcxCommDeregister(comm, dataHandle);
-    flagcxMemFree(dataWindow);
-    flagcxMemFree(signalWindow);
-    flagcxCommDestroy(comm);
-    flagcxHandleFree(handler);
+    sdcclCommDeregister(comm, dataHandle);
+    sdcclMemFree(dataWindow);
+    sdcclMemFree(signalWindow);
+    sdcclCommDestroy(comm);
+    sdcclHandleFree(handler);
     MPI_Finalize();
     return 0;
   }
-  fatal(res, "flagcxOneSideRegister (data) failed", proc);
+  fatal(res, "sdcclOneSideRegister (data) failed", proc);
 
   // Register signal buffer for one-sided operations
-  res = flagcxOneSideSignalRegister(comm, signalWindow, signal_total_bytes);
-  fatal(res, "flagcxOneSideSignalRegister failed", proc);
+  res = sdcclOneSideSignalRegister(comm, signalWindow, signal_total_bytes);
+  fatal(res, "sdcclOneSideSignalRegister failed", proc);
 
-  flagcxStream_t stream;
+  sdcclStream_t stream;
   devHandle->streamCreate(&stream);
   void *dummyBuff = nullptr;
-  devHandle->deviceMalloc(&dummyBuff, 1, flagcxMemDevice, NULL);
+  devHandle->deviceMalloc(&dummyBuff, 1, sdcclMemDevice, NULL);
 
   // Both sides must call GroupStart/GroupEnd together to ensure synchronization
-  flagcxGroupStart(comm);
+  sdcclGroupStart(comm);
   if (isSender) {
-    flagcxSend(dummyBuff, 1, flagcxChar, receiverRank, comm, stream);
+    sdcclSend(dummyBuff, 1, sdcclChar, receiverRank, comm, stream);
   } else if (isReceiver) {
-    flagcxRecv(dummyBuff, 1, flagcxChar, senderRank, comm, stream);
+    sdcclRecv(dummyBuff, 1, sdcclChar, senderRank, comm, stream);
   }
-  flagcxGroupEnd(comm);
+  sdcclGroupEnd(comm);
 
   // Wait for the connection to be fully established
   devHandle->streamSynchronize(stream);
-  devHandle->deviceFree(dummyBuff, flagcxMemDevice, NULL);
+  devHandle->deviceFree(dummyBuff, sdcclMemDevice, NULL);
   devHandle->streamDestroy(stream);
 
   // Additional barrier to ensure connection is ready
@@ -181,7 +181,7 @@ int main(int argc, char *argv[]) {
   }
 
   // Create stream for receiver-side wait operations
-  flagcxStream_t waitStream = nullptr;
+  sdcclStream_t waitStream = nullptr;
   if (isReceiver) {
     devHandle->streamCreate(&waitStream);
   }
@@ -194,7 +194,7 @@ int main(int argc, char *argv[]) {
 
     // Reset signal buffer before each size iteration
     devHandle->deviceMemset(signalWindow, 0, signal_total_bytes,
-                            flagcxMemDevice, NULL);
+                            sdcclMemDevice, NULL);
     MPI_Barrier(MPI_COMM_WORLD);
 
     // Warmup iterations (signal slots [0 .. num_warmup_iters-1])
@@ -208,15 +208,15 @@ int main(int argc, char *argv[]) {
         uint8_t value = static_cast<uint8_t>((senderRank + i) & 0xff);
         std::memset(hostStaging, value, size);
         devHandle->deviceMemcpy((char *)dataWindow + current_send_offset,
-                                hostStaging, size, flagcxMemcpyHostToDevice,
+                                hostStaging, size, sdcclMemcpyHostToDevice,
                                 NULL);
 
-        res = flagcxPutSignal(comm, receiverRank, current_send_offset,
+        res = sdcclPutSignal(comm, receiverRank, current_send_offset,
                               current_recv_offset, size, signalOffset, 0, 0, 1);
-        fatal(res, "flagcxPutSignal warmup failed", proc);
+        fatal(res, "sdcclPutSignal warmup failed", proc);
       } else if (isReceiver) {
-        res = flagcxWaitSignal(comm, senderRank, signalOffset, 1, waitStream);
-        fatal(res, "flagcxWaitSignal warmup failed", proc);
+        res = sdcclWaitSignal(comm, senderRank, signalOffset, 1, waitStream);
+        fatal(res, "sdcclWaitSignal warmup failed", proc);
         devHandle->streamSynchronize(waitStream);
       }
     }
@@ -234,22 +234,22 @@ int main(int argc, char *argv[]) {
         uint8_t value = static_cast<uint8_t>((senderRank + i) & 0xff);
         std::memset(hostStaging, value, size);
         devHandle->deviceMemcpy((char *)dataWindow + current_send_offset,
-                                hostStaging, size, flagcxMemcpyHostToDevice,
+                                hostStaging, size, sdcclMemcpyHostToDevice,
                                 NULL);
 
-        res = flagcxPutSignal(comm, receiverRank, current_send_offset,
+        res = sdcclPutSignal(comm, receiverRank, current_send_offset,
                               current_recv_offset, size, signalOffset, 0, 0, 1);
-        fatal(res, "flagcxPutSignal failed", proc);
+        fatal(res, "sdcclPutSignal failed", proc);
       } else if (isReceiver) {
-        res = flagcxWaitSignal(comm, senderRank, signalOffset, 1, waitStream);
-        fatal(res, "flagcxWaitSignal failed", proc);
+        res = sdcclWaitSignal(comm, senderRank, signalOffset, 1, waitStream);
+        fatal(res, "sdcclWaitSignal failed", proc);
         devHandle->streamSynchronize(waitStream);
 
         if (print_buffer) {
           // Copy device data to host for verification
           devHandle->deviceMemcpy(
               hostStaging, (char *)dataWindow + current_recv_offset,
-              std::min(size, (size_t)64), flagcxMemcpyDeviceToHost, NULL);
+              std::min(size, (size_t)64), sdcclMemcpyDeviceToHost, NULL);
           printf("[rank %d] Received data at offset %zu, size %zu:\n", proc,
                  current_recv_offset, size);
           for (size_t j = 0; j < size && j < 64; ++j) {
@@ -284,21 +284,21 @@ int main(int argc, char *argv[]) {
   // Cleanup
   MPI_Barrier(MPI_COMM_WORLD);
   sleep(1);
-  res = flagcxCommDeregister(comm, dataHandle);
-  fatal(res, "flagcxCommDeregister failed", proc);
+  res = sdcclCommDeregister(comm, dataHandle);
+  fatal(res, "sdcclCommDeregister failed", proc);
 
-  flagcxOneSideDeregister(comm);
-  flagcxOneSideSignalDeregister(comm);
-  flagcxMemFree(dataWindow);
-  flagcxMemFree(signalWindow);
+  sdcclOneSideDeregister(comm);
+  sdcclOneSideSignalDeregister(comm);
+  sdcclMemFree(dataWindow);
+  sdcclMemFree(signalWindow);
   free(hostStaging);
 
   if (waitStream != nullptr) {
     devHandle->streamDestroy(waitStream);
   }
 
-  fatal(flagcxCommDestroy(comm), "flagcxCommDestroy failed", proc);
-  fatal(flagcxHandleFree(handler), "flagcxHandleFree failed", proc);
+  fatal(sdcclCommDestroy(comm), "sdcclCommDestroy failed", proc);
+  fatal(sdcclHandleFree(handler), "sdcclHandleFree failed", proc);
 
   MPI_Finalize();
   return 0;

@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel", "torch", "packaging"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "flagcx"
+name = "sdccl"
 version = "0.10.0"
-description = "FlagCX: A unified collective communication library"
+description = "SDCCL: A unified collective communication library"
 requires-python = ">=3.8"

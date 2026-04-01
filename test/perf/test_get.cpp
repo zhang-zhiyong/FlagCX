@@ -1,5 +1,5 @@
-#include "flagcx.h"
-#include "flagcx_kernel.h"
+#include "sdccl.h"
+#include "sdccl_kernel.h"
 #include "tools.h"
 
 #include <algorithm>
@@ -12,22 +12,22 @@
 #include <sched.h>
 #include <unistd.h>
 
-// test_get: RDMA READ benchmark (flagcxGet)
+// test_get: RDMA READ benchmark (sdcclGet)
 //
 // Protocol:
-//   rank 0 (producer): fills local data buffer, then calls flagcxSignal to
+//   rank 0 (producer): fills local data buffer, then calls sdcclSignal to
 //                       notify rank 1 that data is ready.
-//   rank 1 (getter):   waits for the signal via flagcxWaitSignal, then
-//                       calls flagcxGet to RDMA-READ from rank 0's buffer
+//   rank 1 (getter):   waits for the signal via sdcclWaitSignal, then
+//                       calls sdcclGet to RDMA-READ from rank 0's buffer
 //                       into its own local buffer.
 //
-// Both ranks register their data window (flagcxOneSideRegister) and signal
-// buffer (flagcxOneSideSignalRegister) before the benchmark loop.
+// Both ranks register their data window (sdcclOneSideRegister) and signal
+// buffer (sdcclOneSideSignalRegister) before the benchmark loop.
 
 namespace {
 
-void fatal(flagcxResult_t res, const char *msg, int rank) {
-  if (res != flagcxSuccess) {
+void fatal(sdcclResult_t res, const char *msg, int rank) {
+  if (res != sdcclSuccess) {
     fprintf(stderr, "[rank %d] %s (err=%d)\n", rank, msg, int(res));
     MPI_Abort(MPI_COMM_WORLD, res);
   }
@@ -45,18 +45,18 @@ int main(int argc, char *argv[]) {
   uint64_t split_mask = args.getSplitMask();
   int local_register = args.getLocalRegister();
 
-  // RMA requires flagcxMemAlloc (GDR memory with SYNC_MEMOPS)
+  // RMA requires sdcclMemAlloc (GDR memory with SYNC_MEMOPS)
   if (local_register < 1) {
     fprintf(stderr,
             "test_get requires -R 1 or -R 2 for GDR buffer allocation.\n");
     return 1;
   }
 
-  flagcxHandlerGroup_t handler;
-  flagcxHandleInit(&handler);
-  flagcxUniqueId_t &uniqueId = handler->uniqueId;
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+  sdcclHandlerGroup_t handler;
+  sdcclHandleInit(&handler);
+  sdcclUniqueId_t &uniqueId = handler->uniqueId;
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   int color = 0;
   int worldSize = 1, worldRank = 0;
@@ -70,21 +70,21 @@ int main(int argc, char *argv[]) {
   devHandle->setDevice(worldRank % nGpu);
 
   if (proc == 0)
-    flagcxGetUniqueId(&uniqueId);
-  MPI_Bcast((void *)uniqueId, sizeof(flagcxUniqueId), MPI_BYTE, 0, splitComm);
+    sdcclGetUniqueId(&uniqueId);
+  MPI_Bcast((void *)uniqueId, sizeof(sdcclUniqueId), MPI_BYTE, 0, splitComm);
   MPI_Barrier(MPI_COMM_WORLD);
 
-  flagcxCommInitRank(&comm, totalProcs, uniqueId, proc);
+  sdcclCommInitRank(&comm, totalProcs, uniqueId, proc);
 
   int isHomo = 0;
-  flagcxIsHomoComm(comm, &isHomo);
+  sdcclIsHomoComm(comm, &isHomo);
   if (isHomo) {
     if (proc == 0)
       printf("Skipping get benchmark: hetero communicator not initialised "
              "(isHomo=%d).\n",
              isHomo);
-    flagcxCommDestroy(comm);
-    flagcxHandleFree(handler);
+    sdcclCommDestroy(comm);
+    sdcclHandleFree(handler);
     MPI_Finalize();
     return 0;
   }
@@ -92,8 +92,8 @@ int main(int argc, char *argv[]) {
   if (totalProcs != 2) {
     if (proc == 0)
       printf("test_get requires exactly 2 ranks (producer=0, getter=1).\n");
-    flagcxCommDestroy(comm);
-    flagcxHandleFree(handler);
+    sdcclCommDestroy(comm);
+    sdcclHandleFree(handler);
     MPI_Finalize();
     return 0;
   }
@@ -104,7 +104,7 @@ int main(int argc, char *argv[]) {
   bool isProducer = (proc == producerRank);
   bool isGetter = (proc == getterRank);
 
-  flagcxResult_t res;
+  sdcclResult_t res;
 
   size_t signalBytes = sizeof(uint64_t);
   size_t total_iters_per_size = num_warmup_iters + num_iters;
@@ -115,65 +115,65 @@ int main(int argc, char *argv[]) {
   // Data buffer: GDR memory (SYNC_MEMOPS ensures NIC visibility via GDR BAR)
   // Producer: stores data to be read.  Getter: receives data via RDMA READ.
   void *dataWindow = nullptr;
-  res = flagcxMemAlloc(&dataWindow, data_bytes);
-  if (res != flagcxSuccess || dataWindow == nullptr) {
-    fprintf(stderr, "[rank %d] flagcxMemAlloc failed for data (size=%zu)\n",
+  res = sdcclMemAlloc(&dataWindow, data_bytes);
+  if (res != sdcclSuccess || dataWindow == nullptr) {
+    fprintf(stderr, "[rank %d] sdcclMemAlloc failed for data (size=%zu)\n",
             proc, data_bytes);
     MPI_Abort(MPI_COMM_WORLD, 1);
   }
-  devHandle->deviceMemset(dataWindow, 0, data_bytes, flagcxMemDevice, NULL);
+  devHandle->deviceMemset(dataWindow, 0, data_bytes, sdcclMemDevice, NULL);
 
   // Signal buffer: producer signals getter when each chunk is ready.
   void *signalWindow = nullptr;
-  res = flagcxMemAlloc(&signalWindow, signal_total_bytes);
-  if (res != flagcxSuccess || signalWindow == nullptr) {
-    fprintf(stderr, "[rank %d] flagcxMemAlloc failed for signal (size=%zu)\n",
+  res = sdcclMemAlloc(&signalWindow, signal_total_bytes);
+  if (res != sdcclSuccess || signalWindow == nullptr) {
+    fprintf(stderr, "[rank %d] sdcclMemAlloc failed for signal (size=%zu)\n",
             proc, signal_total_bytes);
     MPI_Abort(MPI_COMM_WORLD, 1);
   }
-  devHandle->deviceMemset(signalWindow, 0, signal_total_bytes, flagcxMemDevice,
+  devHandle->deviceMemset(signalWindow, 0, signal_total_bytes, sdcclMemDevice,
                           NULL);
 
   // Register data buffer in global reg pool
   void *dataHandle = nullptr;
-  res = flagcxCommRegister(comm, dataWindow, data_bytes, &dataHandle);
-  fatal(res, "flagcxCommRegister (data) failed", proc);
+  res = sdcclCommRegister(comm, dataWindow, data_bytes, &dataHandle);
+  fatal(res, "sdcclCommRegister (data) failed", proc);
 
   // Register data buffer for one-sided operations (MR index 0)
-  res = flagcxOneSideRegister(comm, dataWindow, data_bytes);
-  if (res == flagcxNotSupported) {
+  res = sdcclOneSideRegister(comm, dataWindow, data_bytes);
+  if (res == sdcclNotSupported) {
     if (proc == 0)
       printf("Skipping get benchmark: net adaptor does not support iget.\n");
-    flagcxCommDeregister(comm, dataHandle);
-    flagcxMemFree(dataWindow);
-    flagcxMemFree(signalWindow);
-    flagcxCommDestroy(comm);
-    flagcxHandleFree(handler);
+    sdcclCommDeregister(comm, dataHandle);
+    sdcclMemFree(dataWindow);
+    sdcclMemFree(signalWindow);
+    sdcclCommDestroy(comm);
+    sdcclHandleFree(handler);
     MPI_Finalize();
     return 0;
   }
-  fatal(res, "flagcxOneSideRegister (data) failed", proc);
+  fatal(res, "sdcclOneSideRegister (data) failed", proc);
 
   // Register signal buffer for one-sided operations
-  res = flagcxOneSideSignalRegister(comm, signalWindow, signal_total_bytes);
-  fatal(res, "flagcxOneSideSignalRegister failed", proc);
+  res = sdcclOneSideSignalRegister(comm, signalWindow, signal_total_bytes);
+  fatal(res, "sdcclOneSideSignalRegister failed", proc);
 
   // Dummy send/recv to establish full-mesh connections used by one-sided ops
-  flagcxStream_t stream;
+  sdcclStream_t stream;
   devHandle->streamCreate(&stream);
   void *dummyBuff = nullptr;
-  devHandle->deviceMalloc(&dummyBuff, 1, flagcxMemDevice, NULL);
+  devHandle->deviceMalloc(&dummyBuff, 1, sdcclMemDevice, NULL);
 
-  flagcxGroupStart(comm);
+  sdcclGroupStart(comm);
   if (isProducer) {
-    flagcxSend(dummyBuff, 1, flagcxChar, getterRank, comm, stream);
+    sdcclSend(dummyBuff, 1, sdcclChar, getterRank, comm, stream);
   } else if (isGetter) {
-    flagcxRecv(dummyBuff, 1, flagcxChar, producerRank, comm, stream);
+    sdcclRecv(dummyBuff, 1, sdcclChar, producerRank, comm, stream);
   }
-  flagcxGroupEnd(comm);
+  sdcclGroupEnd(comm);
 
   devHandle->streamSynchronize(stream);
-  devHandle->deviceFree(dummyBuff, flagcxMemDevice, NULL);
+  devHandle->deviceFree(dummyBuff, sdcclMemDevice, NULL);
   devHandle->streamDestroy(stream);
 
   MPI_Barrier(MPI_COMM_WORLD);
@@ -187,8 +187,8 @@ int main(int argc, char *argv[]) {
     MPI_Abort(MPI_COMM_WORLD, 1);
   }
 
-  // Stream used by getter for streamWaitValue64 (flagcxWaitSignal)
-  flagcxStream_t waitStream = nullptr;
+  // Stream used by getter for streamWaitValue64 (sdcclWaitSignal)
+  sdcclStream_t waitStream = nullptr;
   if (isGetter) {
     devHandle->streamCreate(&waitStream);
   }
@@ -201,7 +201,7 @@ int main(int argc, char *argv[]) {
 
     // Reset signal buffer before each size iteration
     devHandle->deviceMemset(signalWindow, 0, signal_total_bytes,
-                            flagcxMemDevice, NULL);
+                            sdcclMemDevice, NULL);
     MPI_Barrier(MPI_COMM_WORLD);
 
     // Warmup iterations (signal slots [0 .. num_warmup_iters-1])
@@ -214,18 +214,18 @@ int main(int argc, char *argv[]) {
         uint8_t value = static_cast<uint8_t>((producerRank + i) & 0xff);
         std::memset(hostStaging, value, size);
         devHandle->deviceMemcpy((char *)dataWindow + dataOffset, hostStaging,
-                                size, flagcxMemcpyHostToDevice, NULL);
+                                size, sdcclMemcpyHostToDevice, NULL);
 
-        res = flagcxSignal(comm, getterRank, signalOffset, 1);
-        fatal(res, "flagcxSignal warmup failed", proc);
+        res = sdcclSignal(comm, getterRank, signalOffset, 1);
+        fatal(res, "sdcclSignal warmup failed", proc);
       } else if (isGetter) {
         // Wait for producer's signal then RDMA READ from producer's buffer
-        res = flagcxWaitSignal(comm, producerRank, signalOffset, 1, waitStream);
-        fatal(res, "flagcxWaitSignal warmup failed", proc);
+        res = sdcclWaitSignal(comm, producerRank, signalOffset, 1, waitStream);
+        fatal(res, "sdcclWaitSignal warmup failed", proc);
         devHandle->streamSynchronize(waitStream);
 
-        res = flagcxGet(comm, producerRank, dataOffset, dataOffset, size, 0, 0);
-        fatal(res, "flagcxGet warmup failed", proc);
+        res = sdcclGet(comm, producerRank, dataOffset, dataOffset, size, 0, 0);
+        fatal(res, "sdcclGet warmup failed", proc);
       }
     }
 
@@ -241,22 +241,22 @@ int main(int argc, char *argv[]) {
         uint8_t value = static_cast<uint8_t>((producerRank + i) & 0xff);
         std::memset(hostStaging, value, size);
         devHandle->deviceMemcpy((char *)dataWindow + dataOffset, hostStaging,
-                                size, flagcxMemcpyHostToDevice, NULL);
+                                size, sdcclMemcpyHostToDevice, NULL);
 
-        res = flagcxSignal(comm, getterRank, signalOffset, 1);
-        fatal(res, "flagcxSignal failed", proc);
+        res = sdcclSignal(comm, getterRank, signalOffset, 1);
+        fatal(res, "sdcclSignal failed", proc);
       } else if (isGetter) {
-        res = flagcxWaitSignal(comm, producerRank, signalOffset, 1, waitStream);
-        fatal(res, "flagcxWaitSignal failed", proc);
+        res = sdcclWaitSignal(comm, producerRank, signalOffset, 1, waitStream);
+        fatal(res, "sdcclWaitSignal failed", proc);
         devHandle->streamSynchronize(waitStream);
 
-        res = flagcxGet(comm, producerRank, dataOffset, dataOffset, size, 0, 0);
-        fatal(res, "flagcxGet failed", proc);
+        res = sdcclGet(comm, producerRank, dataOffset, dataOffset, size, 0, 0);
+        fatal(res, "sdcclGet failed", proc);
 
         if (print_buffer) {
           devHandle->deviceMemcpy(hostStaging, (char *)dataWindow + dataOffset,
                                   std::min(size, (size_t)64),
-                                  flagcxMemcpyDeviceToHost, NULL);
+                                  sdcclMemcpyDeviceToHost, NULL);
           printf("[rank %d] Got data at offset %zu, size %zu:\n", proc,
                  dataOffset, size);
           for (size_t j = 0; j < size && j < 64; ++j) {
@@ -291,21 +291,21 @@ int main(int argc, char *argv[]) {
   // Cleanup
   MPI_Barrier(MPI_COMM_WORLD);
   sleep(1);
-  res = flagcxCommDeregister(comm, dataHandle);
-  fatal(res, "flagcxCommDeregister failed", proc);
+  res = sdcclCommDeregister(comm, dataHandle);
+  fatal(res, "sdcclCommDeregister failed", proc);
 
-  flagcxOneSideDeregister(comm);
-  flagcxOneSideSignalDeregister(comm);
-  flagcxMemFree(dataWindow);
-  flagcxMemFree(signalWindow);
+  sdcclOneSideDeregister(comm);
+  sdcclOneSideSignalDeregister(comm);
+  sdcclMemFree(dataWindow);
+  sdcclMemFree(signalWindow);
   free(hostStaging);
 
   if (waitStream != nullptr) {
     devHandle->streamDestroy(waitStream);
   }
 
-  fatal(flagcxCommDestroy(comm), "flagcxCommDestroy failed", proc);
-  fatal(flagcxHandleFree(handler), "flagcxHandleFree failed", proc);
+  fatal(sdcclCommDestroy(comm), "sdcclCommDestroy failed", proc);
+  fatal(sdcclHandleFree(handler), "sdcclHandleFree failed", proc);
 
   MPI_Finalize();
   return 0;

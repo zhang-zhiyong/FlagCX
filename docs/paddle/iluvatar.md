@@ -1,4 +1,4 @@
-# Guide For Using Paddle With FlagCX On Iluvatar Machines
+# Guide For Using Paddle With SDCCL On Iluvatar Machines
 ## Environment Setup
 1. prepare a docker container on Iluvatar machines
 2. start the docker container
@@ -9,22 +9,22 @@
     ```bash
     git clone https://github.com/PaddlePaddle/PaddleCustomDevice.git
     ```
-4. clone FlagCX
+4. clone SDCCL
     ```bash
-    git clone https://github.com/flagos-ai/FlagCX.git
+    git clone https://github.com/flagos-ai/SDCCL.git
     ```
-## Compile Paddle With FlagCX
+## Compile Paddle With SDCCL
 1. cd into iluvatar_gpu directory
     ```bash
     cd PaddleCustomDevice/backends/iluvatar_gpu
     ```
-2. modify default build script to enable compiling with FlagCX  
+2. modify default build script to enable compiling with SDCCL  
     - In `build_paddle.sh`
         ![alt text](../images/iluvatar_build_paddle.png)
-        set `BUILD_WITH_FLAGCX=1` and the correct location for `FLAGCX_ROOT`
+        set `BUILD_WITH_SDCCL=1` and the correct location for `SDCCL_ROOT`
     - In `CMakeLists.txt`
         ![alt text](../images/iluvatar_cmakelists.png)
-        change `nccl` to `${FLAGCX_LIB}`
+        change `nccl` to `${SDCCL_LIB}`
 3. run build script
     ```bash
     bash build_paddle.sh
@@ -33,10 +33,10 @@
     ```bash
     bash install_paddle.sh
     ```
-__Note__: To build Paddle with FlagCX on Iluvatar machines, we need to ensure that FlagCX is built before building Paddle
+__Note__: To build Paddle with SDCCL on Iluvatar machines, we need to ensure that SDCCL is built before building Paddle
 
-## Train Model using Paddle + FlagCX
-We now support training ERNIE4.5 on Iluvatar machines using Paddle + FlagCX. Please refer to the following steps to get started
+## Train Model using Paddle + SDCCL
+We now support training ERNIE4.5 on Iluvatar machines using Paddle + SDCCL. Please refer to the following steps to get started
 1. Get ERNIE-4.5-Lite model from huggingface   
     ERNIE-4.5-Lite corresponds to ERNIE-4.5-21B-A3B-Paddle 
 2. clone ERNIE repo
@@ -77,10 +77,10 @@ We now support training ERNIE4.5 on Iluvatar machines using Paddle + FlagCX. Ple
     export FLAGS_set_to_1d=False
     export NVIDIA_TF32_OVERRIDE=0
     export FLAGS_dataloader_use_file_descriptor=False
-    export FLAGCX_SOCKET_IFNAME=ens22f0,ens11f0np0
-    export FLAGCX_IB_HCA=mlx5_101
-    export FLAGCX_DEBUG=TRACE
-    export FLAGCX_DEBUG_SUBSYS=INIT
+    export SDCCL_SOCKET_IFNAME=ens22f0,ens11f0np0
+    export SDCCL_IB_HCA=mlx5_101
+    export SDCCL_DEBUG=TRACE
+    export SDCCL_DEBUG_SUBSYS=INIT
     #export GLOG_v=4
     #export FLAGS_call_stack_level=3
     #export LD_PRELOAD=/usr/local/corex-4.3.0/lib64/libcuda.so.1

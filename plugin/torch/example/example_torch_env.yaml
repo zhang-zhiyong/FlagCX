@@ -6,8 +6,8 @@ testfile: ./example.py
 master_port: 8281
 master_addr: 127.0.0.1
 envs:
-  FLAGCX_DEBUG: INFO
-  FLAGCX_DEBUG_SUBSYS: ALL
+  SDCCL_DEBUG: INFO
+  SDCCL_DEBUG_SUBSYS: ALL
   device_type_specific:
     nvidia:
       CUDA_VISIBLE_DEVICES: 0,1,2,3,4,5,6,7

@@ -25,7 +25,7 @@ jobs:
           - job_name: buildcx-nvidia-image
             push: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.push_images }}
             containerfile: 'containerfile'
-            image_name: 'flagcx-nvidia'
+            image_name: 'sdccl-nvidia'
             tag: 'latest'
             runson: 'h20'
             no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.push_images }}
@@ -38,7 +38,7 @@ jobs:
           - job_name: buildcx-metax-image
             push: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.push_images }}
             containerfile: 'containerfile'
-            image_name: 'flagcx-metax'
+            image_name: 'sdccl-metax'
             tag: 'latest'
             runson: 'h20'
             no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.push_images }}
@@ -51,7 +51,7 @@ jobs:
           - job_name: buildcx-ascend-image
             push: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.push_images }}
             containerfile: 'containerfile'
-            image_name: 'flagcx-ascend'
+            image_name: 'sdccl-ascend'
             tag: 'latest'
             runson: 'h20'
             no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.push_images }}
@@ -64,7 +64,7 @@ jobs:
           - job_name: buildcx-tsingmicro-image
             push: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.push_images }}
             containerfile: 'containerfile'
-            image_name: 'flagcx-tsingmicro'
+            image_name: 'sdccl-tsingmicro'
             tag: 'latest'
             runson: 'h20'
             no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.push_images }}
@@ -81,7 +81,7 @@ jobs:
       tag: ${{ matrix.tag }}
       runson: ${{ matrix.runson }}
       build-args: ${{ matrix.build-args }}
-      image_prefix: 'flagcx'
+      image_prefix: 'sdccl'
       no-cache: ${{ matrix.no-cache }}
     secrets:
       REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}

@@ -36,16 +36,16 @@ jobs:
           apt update -y
           apt-get install -y python3 python3-pip python3-venv git rdma-core ibverbs-utils perftest infiniband-diags libibverbs-dev librdmacm-dev
           python3 -m venv venv
-          cd /__w/FlagCX/FlagCX
+          cd /__w/SDCCL/SDCCL
           . venv/bin/activate
-          git config --global --add safe.directory /__w/FlagCX/FlagCX
+          git config --global --add safe.directory /__w/SDCCL/SDCCL
           git status
           pip install setuptools pre-commit -i https://pypi.tuna.tsinghua.edu.cn/simple 
           pre-commit install
 
       - name: Run Code Format Check with pre-commit
         run: |
-          cd /__w/FlagCX/FlagCX
+          cd /__w/SDCCL/SDCCL
           . venv/bin/activate
           apt update -y
           apt-get install clang-format -y
@@ -60,7 +60,7 @@ jobs:
 
       - name: Build Google Test
         run: |
-          cd /__w/FlagCX/FlagCX/third-party/googletest
+          cd /__w/SDCCL/SDCCL/third-party/googletest
           mkdir -p build
           cd build
           cmake ..
@@ -68,26 +68,26 @@ jobs:
 
       - name: Run `make` to build the project
         run: |
-          cd /__w/FlagCX/FlagCX
+          cd /__w/SDCCL/SDCCL
           export MPI_HOME=/usr/local/mpi
           make -j$(nproc) USE_NVIDIA=1 COMPILE_KERNEL=1
 
       - name: Enter test/unittest and run `make` for unit tests
         run: |
-          cd /__w/FlagCX/FlagCX/test/unittest
+          cd /__w/SDCCL/SDCCL/test/unittest
           export MPI_HOME=/usr/local/mpi
           make -j$(nproc)
 
       - name: Run single-cluster tests with mpirun
         run: |
-          cd /__w/FlagCX/FlagCX/test/unittest
+          cd /__w/SDCCL/SDCCL/test/unittest
           export MPI_HOME=/usr/local/mpi
           export PATH=$MPI_HOME/bin:$PATH
-          mpirun -np 8 --allow-run-as-root ./build/bin/main --gtest_filter=-FlagCXKernelTest.*
+          mpirun -np 8 --allow-run-as-root ./build/bin/main --gtest_filter=-SDCCLKernelTest.*
 
       - name: Run multi-cluster tests with mpirun
         run: |
-          cd /__w/FlagCX/FlagCX/test/unittest
+          cd /__w/SDCCL/SDCCL/test/unittest
           export MPI_HOME=/usr/local/mpi
           export PATH=$MPI_HOME/bin:$PATH
-          mpirun -np 8 --allow-run-as-root -x FLAGCX_MEM_ENABLE=1 -x FLAGCX_CLUSTER_SPLIT_LIST=2  -x FLAGCX_IB_HCA=mlx5 ./build/bin/main --gtest_filter=-FlagCXKernelTest.*
+          mpirun -np 8 --allow-run-as-root -x SDCCL_MEM_ENABLE=1 -x SDCCL_CLUSTER_SPLIT_LIST=2  -x SDCCL_IB_HCA=mlx5 ./build/bin/main --gtest_filter=-SDCCLKernelTest.*

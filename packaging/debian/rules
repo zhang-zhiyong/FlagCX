@@ -3,9 +3,9 @@
 export DH_VERBOSE = 1
 
 # Allow building only specific backend via environment variable
-# Usage: FLAGCX_BUILD_BACKEND=metax dpkg-buildpackage ...
+# Usage: SDCCL_BUILD_BACKEND=metax dpkg-buildpackage ...
 # Valid values: metax, nvidia, all (default)
-FLAGCX_BUILD_BACKEND ?= all
+SDCCL_BUILD_BACKEND ?= all
 
 # Build directories for different backends
 BUILD_DIR_METAX = $(CURDIR)/build-metax
@@ -20,24 +20,24 @@ override_dh_auto_clean:
 	$(MAKE) clean || true
 
 override_dh_auto_build:
-ifeq ($(FLAGCX_BUILD_BACKEND),nvidia)
+ifeq ($(SDCCL_BUILD_BACKEND),nvidia)
 	@echo "Building NVIDIA variant only"
 	# Build NVIDIA variant
 	mkdir -p $(BUILD_DIR_NVIDIA)
 	$(MAKE) USE_NVIDIA=1 PREFIX=/usr
 	# Copy built files to nvidia build dir
 	mkdir -p $(BUILD_DIR_NVIDIA)/lib $(BUILD_DIR_NVIDIA)/include
-	cp -a build/lib/libflagcx.so* $(BUILD_DIR_NVIDIA)/lib/ || cp -a build/libflagcx.so* $(BUILD_DIR_NVIDIA)/lib/
-	cp -r flagcx/include $(BUILD_DIR_NVIDIA)/include/flagcx
-else ifeq ($(FLAGCX_BUILD_BACKEND),metax)
+	cp -a build/lib/libsdccl.so* $(BUILD_DIR_NVIDIA)/lib/ || cp -a build/libsdccl.so* $(BUILD_DIR_NVIDIA)/lib/
+	cp -r sdccl/include $(BUILD_DIR_NVIDIA)/include/sdccl
+else ifeq ($(SDCCL_BUILD_BACKEND),metax)
 	@echo "Building MetaX variant only"
 	# Build MetaX variant
 	mkdir -p $(BUILD_DIR_METAX)
 	$(MAKE) USE_METAX=1 PREFIX=/usr
 	# Copy built files to metax build dir
 	mkdir -p $(BUILD_DIR_METAX)/lib $(BUILD_DIR_METAX)/include
-	cp -a build/lib/libflagcx.so* $(BUILD_DIR_METAX)/lib/ || cp -a build/libflagcx.so* $(BUILD_DIR_METAX)/lib/
-	cp -r flagcx/include $(BUILD_DIR_METAX)/include/flagcx
+	cp -a build/lib/libsdccl.so* $(BUILD_DIR_METAX)/lib/ || cp -a build/libsdccl.so* $(BUILD_DIR_METAX)/lib/
+	cp -r sdccl/include $(BUILD_DIR_METAX)/include/sdccl
 else
 	@echo "Building both variants"
 	# Build MetaX variant
@@ -45,8 +45,8 @@ else
 	$(MAKE) USE_METAX=1 PREFIX=/usr
 	# Copy built files to metax build dir
 	mkdir -p $(BUILD_DIR_METAX)/lib $(BUILD_DIR_METAX)/include
-	cp -a build/lib/libflagcx.so* $(BUILD_DIR_METAX)/lib/ || cp -a build/libflagcx.so* $(BUILD_DIR_METAX)/lib/
-	cp -r flagcx/include $(BUILD_DIR_METAX)/include/flagcx
+	cp -a build/lib/libsdccl.so* $(BUILD_DIR_METAX)/lib/ || cp -a build/libsdccl.so* $(BUILD_DIR_METAX)/lib/
+	cp -r sdccl/include $(BUILD_DIR_METAX)/include/sdccl
 
 	# Clean for next build
 	$(MAKE) clean
@@ -56,62 +56,62 @@ else
 	$(MAKE) USE_NVIDIA=1 PREFIX=/usr
 	# Copy built files to nvidia build dir
 	mkdir -p $(BUILD_DIR_NVIDIA)/lib $(BUILD_DIR_NVIDIA)/include
-	cp -a build/lib/libflagcx.so* $(BUILD_DIR_NVIDIA)/lib/ || cp -a build/libflagcx.so* $(BUILD_DIR_NVIDIA)/lib/
-	cp -r flagcx/include $(BUILD_DIR_NVIDIA)/include/flagcx
+	cp -a build/lib/libsdccl.so* $(BUILD_DIR_NVIDIA)/lib/ || cp -a build/libsdccl.so* $(BUILD_DIR_NVIDIA)/lib/
+	cp -r sdccl/include $(BUILD_DIR_NVIDIA)/include/sdccl
 endif
 
 override_dh_auto_install:
-ifeq ($(FLAGCX_BUILD_BACKEND),nvidia)
+ifeq ($(SDCCL_BUILD_BACKEND),nvidia)
 	@echo "Installing NVIDIA variant only"
 	# Install NVIDIA variant
-	mkdir -p debian/libflagcx-nvidia/usr/lib
-	mkdir -p debian/libflagcx-nvidia-dev/usr/include/flagcx
-	cp -a $(BUILD_DIR_NVIDIA)/lib/libflagcx.so* debian/libflagcx-nvidia/usr/lib/
+	mkdir -p debian/libsdccl-nvidia/usr/lib
+	mkdir -p debian/libsdccl-nvidia-dev/usr/include/sdccl
+	cp -a $(BUILD_DIR_NVIDIA)/lib/libsdccl.so* debian/libsdccl-nvidia/usr/lib/
 	# Fix SONAME and RPATH
-	cd debian/libflagcx-nvidia/usr/lib && \
-		patchelf --set-soname libflagcx.so.0 libflagcx.so && \
-		patchelf --remove-rpath libflagcx.so && \
-		ln -sf libflagcx.so libflagcx.so.0 && \
-		ln -sf libflagcx.so libflagcx.so.0.1.0
-	cp -r $(BUILD_DIR_NVIDIA)/include/* debian/libflagcx-nvidia-dev/usr/include/flagcx/
-else ifeq ($(FLAGCX_BUILD_BACKEND),metax)
+	cd debian/libsdccl-nvidia/usr/lib && \
+		patchelf --set-soname libsdccl.so.0 libsdccl.so && \
+		patchelf --remove-rpath libsdccl.so && \
+		ln -sf libsdccl.so libsdccl.so.0 && \
+		ln -sf libsdccl.so libsdccl.so.0.1.0
+	cp -r $(BUILD_DIR_NVIDIA)/include/* debian/libsdccl-nvidia-dev/usr/include/sdccl/
+else ifeq ($(SDCCL_BUILD_BACKEND),metax)
 	@echo "Installing MetaX variant only"
 	# Install MetaX variant
-	mkdir -p debian/libflagcx-metax/usr/lib
-	mkdir -p debian/libflagcx-metax-dev/usr/include/flagcx
-	cp -a $(BUILD_DIR_METAX)/lib/libflagcx.so* debian/libflagcx-metax/usr/lib/
+	mkdir -p debian/libsdccl-metax/usr/lib
+	mkdir -p debian/libsdccl-metax-dev/usr/include/sdccl
+	cp -a $(BUILD_DIR_METAX)/lib/libsdccl.so* debian/libsdccl-metax/usr/lib/
 	# Fix SONAME and RPATH
-	cd debian/libflagcx-metax/usr/lib && \
-		patchelf --set-soname libflagcx.so.0 libflagcx.so && \
-		patchelf --remove-rpath libflagcx.so && \
-		ln -sf libflagcx.so libflagcx.so.0 && \
-		ln -sf libflagcx.so libflagcx.so.0.1.0
-	cp -r $(BUILD_DIR_METAX)/include/* debian/libflagcx-metax-dev/usr/include/flagcx/
+	cd debian/libsdccl-metax/usr/lib && \
+		patchelf --set-soname libsdccl.so.0 libsdccl.so && \
+		patchelf --remove-rpath libsdccl.so && \
+		ln -sf libsdccl.so libsdccl.so.0 && \
+		ln -sf libsdccl.so libsdccl.so.0.1.0
+	cp -r $(BUILD_DIR_METAX)/include/* debian/libsdccl-metax-dev/usr/include/sdccl/
 else
 	@echo "Installing both variants"
 	# Install MetaX variant
-	mkdir -p debian/libflagcx-metax/usr/lib
-	mkdir -p debian/libflagcx-metax-dev/usr/include/flagcx
-	cp -a $(BUILD_DIR_METAX)/lib/libflagcx.so* debian/libflagcx-metax/usr/lib/
+	mkdir -p debian/libsdccl-metax/usr/lib
+	mkdir -p debian/libsdccl-metax-dev/usr/include/sdccl
+	cp -a $(BUILD_DIR_METAX)/lib/libsdccl.so* debian/libsdccl-metax/usr/lib/
 	# Fix SONAME and RPATH for MetaX
-	cd debian/libflagcx-metax/usr/lib && \
-		patchelf --set-soname libflagcx.so.0 libflagcx.so && \
-		patchelf --remove-rpath libflagcx.so && \
-		ln -sf libflagcx.so libflagcx.so.0 && \
-		ln -sf libflagcx.so libflagcx.so.0.1.0
-	cp -r $(BUILD_DIR_METAX)/include/* debian/libflagcx-metax-dev/usr/include/flagcx/
+	cd debian/libsdccl-metax/usr/lib && \
+		patchelf --set-soname libsdccl.so.0 libsdccl.so && \
+		patchelf --remove-rpath libsdccl.so && \
+		ln -sf libsdccl.so libsdccl.so.0 && \
+		ln -sf libsdccl.so libsdccl.so.0.1.0
+	cp -r $(BUILD_DIR_METAX)/include/* debian/libsdccl-metax-dev/usr/include/sdccl/
 
 	# Install NVIDIA variant
-	mkdir -p debian/libflagcx-nvidia/usr/lib
-	mkdir -p debian/libflagcx-nvidia-dev/usr/include/flagcx
-	cp -a $(BUILD_DIR_NVIDIA)/lib/libflagcx.so* debian/libflagcx-nvidia/usr/lib/
+	mkdir -p debian/libsdccl-nvidia/usr/lib
+	mkdir -p debian/libsdccl-nvidia-dev/usr/include/sdccl
+	cp -a $(BUILD_DIR_NVIDIA)/lib/libsdccl.so* debian/libsdccl-nvidia/usr/lib/
 	# Fix SONAME and RPATH for NVIDIA
-	cd debian/libflagcx-nvidia/usr/lib && \
-		patchelf --set-soname libflagcx.so.0 libflagcx.so && \
-		patchelf --remove-rpath libflagcx.so && \
-		ln -sf libflagcx.so libflagcx.so.0 && \
-		ln -sf libflagcx.so libflagcx.so.0.1.0
-	cp -r $(BUILD_DIR_NVIDIA)/include/* debian/libflagcx-nvidia-dev/usr/include/flagcx/
+	cd debian/libsdccl-nvidia/usr/lib && \
+		patchelf --set-soname libsdccl.so.0 libsdccl.so && \
+		patchelf --remove-rpath libsdccl.so && \
+		ln -sf libsdccl.so libsdccl.so.0 && \
+		ln -sf libsdccl.so libsdccl.so.0.1.0
+	cp -r $(BUILD_DIR_NVIDIA)/include/* debian/libsdccl-nvidia-dev/usr/include/sdccl/
 endif
 
 override_dh_auto_test:

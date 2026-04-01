@@ -38,14 +38,14 @@ jobs:
           apt-get install -y python3 python3-pip python3-venv git
           python3 -m venv venv
           . venv/bin/activate
-          cd /__w/FlagCX/FlagCX
-          git config --global --add safe.directory /__w/FlagCX/FlagCX
+          cd /__w/SDCCL/SDCCL
+          git config --global --add safe.directory /__w/SDCCL/SDCCL
           pip install setuptools pre-commit -i https://pypi.tuna.tsinghua.edu.cn/simple
           pre-commit install
 
       - name: Run Code Format Check with pre-commit
         run: |
-          cd /__w/FlagCX/FlagCX
+          cd /__w/SDCCL/SDCCL
           . venv/bin/activate
           apt update -y
           apt-get install clang-format -y
@@ -64,10 +64,10 @@ jobs:
           ls -l ./test/script
 
       - name: Ensure script has execute permissions
-        run: chmod +x /__w/FlagCX/FlagCX/test/script/auto_script.sh
+        run: chmod +x /__w/SDCCL/SDCCL/test/script/auto_script.sh
 
       - name: Run Auto Test Script in Container
         run: |
-          cd /__w/FlagCX/FlagCX
+          cd /__w/SDCCL/SDCCL
           ./test/script/auto_script.sh
 

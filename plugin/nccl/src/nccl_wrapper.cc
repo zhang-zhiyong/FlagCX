@@ -1,12 +1,12 @@
 /*************************************************************************
  * Copyright (c) 2025, BAAI. All rights reserved.
  *
- * NCCL API wrapper that delegates to FlagCX internally.
- * This allows frameworks using NCCL to transparently use FlagCX
+ * NCCL API wrapper that delegates to SDCCL internally.
+ * This allows frameworks using NCCL to transparently use SDCCL
  * without code modifications.
  ************************************************************************/
 
-#include "flagcx.h"
+#include "sdccl.h"
 #include "nccl.h"
 #include <cstdio>
 #include <cstdlib>
@@ -21,7 +21,7 @@
 
 #if NCCL_VERSION_CODE < NCCL_VERSION(2, 21, 0)
 #error                                                                         \
-    "NCCL version 2.21.0 or later is required to build the FlagCX NCCL wrapper"
+    "NCCL version 2.21.0 or later is required to build the SDCCL NCCL wrapper"
 #endif
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@
 /* ──────────────────────────────────────────────────────────────────────
  * TLS recursive guard
  * A thread-local recursive guard prevents infinite recursion when
- * FlagCX's NCCL adaptor calls back into nccl* symbols.  On re-entry
+ * SDCCL's NCCL adaptor calls back into nccl* symbols.  On re-entry
  * the call is forwarded to the real NCCL loaded via dlopen.
  * ────────────────────────────────────────────────────────────────────── */
 
@@ -58,7 +58,7 @@ struct recursionGuard {
 struct realNccl {
   void *handle;
 
-  /* Function pointers — one per NCCL API that FlagCX may call back into */
+  /* Function pointers — one per NCCL API that SDCCL may call back into */
   ncclResult_t (*ncclGetVersion)(int *);
   ncclResult_t (*ncclGetUniqueId)(ncclUniqueId *);
   const char *(*ncclGetErrorString)(ncclResult_t);
@@ -107,7 +107,7 @@ static void initRealNccl() {
   r->handle = dlopen(REAL_NCCL_PATH, RTLD_LAZY | RTLD_LOCAL);
   if (!r->handle) {
     fprintf(stderr,
-            "FlagCX NCCL wrapper: failed to dlopen real NCCL at %s: %s\n",
+            "SDCCL NCCL wrapper: failed to dlopen real NCCL at %s: %s\n",
             REAL_NCCL_PATH, dlerror());
     delete r;
     return;
@@ -116,7 +116,7 @@ static void initRealNccl() {
 #define LOAD_SYM(name)                                                         \
   r->name = reinterpret_cast<decltype(r->name)>(dlsym(r->handle, #name));      \
   if (!r->name) {                                                              \
-    fprintf(stderr, "FlagCX NCCL wrapper: dlsym failed for " #name ": %s\n",   \
+    fprintf(stderr, "SDCCL NCCL wrapper: dlsym failed for " #name ": %s\n",   \
             dlerror());                                                        \
   }
 
@@ -165,91 +165,91 @@ static realNccl &getRealNccl() {
  * ────────────────────────────────────────────────────────────────────── */
 
 struct ncclComm {
-  flagcxHandlerGroup_t handler; // handler group (uniqueId, comm, devHandle)
+  sdcclHandlerGroup_t handler; // handler group (uniqueId, comm, devHandle)
   int rank;
   int nranks;
-  flagcxResult_t asyncError;
+  sdcclResult_t asyncError;
 };
 
 /* ──────────────────────────────────────────────────────────────────────
- * Helper: wrap a cudaStream_t into a temporary flagcxStream_t
+ * Helper: wrap a cudaStream_t into a temporary sdcclStream_t
  *
- * FlagCX wraps CUDA streams in `struct flagcxStream { cudaStream_t base; }`.
+ * SDCCL wraps CUDA streams in `struct sdcclStream { cudaStream_t base; }`.
  * The struct definition lives in the adaptor headers (not public), so we
  * define a layout-compatible version here for stream wrapping.
- * We allocate a temporary wrapper, call the FlagCX API, then free it.
+ * We allocate a temporary wrapper, call the SDCCL API, then free it.
  * ────────────────────────────────────────────────────────────────────── */
 
-struct flagcxStream {
+struct sdcclStream {
   cudaStream_t base;
 };
 
-struct FlagcxStreamWrapper {
-  flagcxStream_t stream;
+struct SdcclStreamWrapper {
+  sdcclStream_t stream;
 
-  FlagcxStreamWrapper(cudaStream_t cudaStream) {
-    stream = (flagcxStream_t)malloc(sizeof(struct flagcxStream));
+  SdcclStreamWrapper(cudaStream_t cudaStream) {
+    stream = (sdcclStream_t)malloc(sizeof(struct sdcclStream));
     if (stream) {
       stream->base = cudaStream;
     }
   }
 
-  ~FlagcxStreamWrapper() { free(stream); }
+  ~SdcclStreamWrapper() { free(stream); }
 
-  FlagcxStreamWrapper(const FlagcxStreamWrapper &) = delete;
-  FlagcxStreamWrapper &operator=(const FlagcxStreamWrapper &) = delete;
+  SdcclStreamWrapper(const SdcclStreamWrapper &) = delete;
+  SdcclStreamWrapper &operator=(const SdcclStreamWrapper &) = delete;
 };
 
 /* ──────────────────────────────────────────────────────────────────────
- * Helper: ncclDataType_t -> flagcxDataType_t
+ * Helper: ncclDataType_t -> sdcclDataType_t
  * ────────────────────────────────────────────────────────────────────── */
 
-static ncclResult_t toFlagcxDataType(ncclDataType_t ncclType,
-                                     flagcxDataType_t *flagcxType) {
+static ncclResult_t toSdcclDataType(ncclDataType_t ncclType,
+                                     sdcclDataType_t *sdcclType) {
   switch (ncclType) {
     case ncclInt8:
-      *flagcxType = flagcxInt8;
+      *sdcclType = sdcclInt8;
       return ncclSuccess;
     case ncclUint8:
-      *flagcxType = flagcxUint8;
+      *sdcclType = sdcclUint8;
       return ncclSuccess;
     case ncclInt32:
-      *flagcxType = flagcxInt32;
+      *sdcclType = sdcclInt32;
       return ncclSuccess;
     case ncclUint32:
-      *flagcxType = flagcxUint32;
+      *sdcclType = sdcclUint32;
       return ncclSuccess;
     case ncclInt64:
-      *flagcxType = flagcxInt64;
+      *sdcclType = sdcclInt64;
       return ncclSuccess;
     case ncclUint64:
-      *flagcxType = flagcxUint64;
+      *sdcclType = sdcclUint64;
       return ncclSuccess;
     case ncclFloat16:
-      *flagcxType = flagcxFloat16;
+      *sdcclType = sdcclFloat16;
       return ncclSuccess;
     case ncclFloat32:
-      *flagcxType = flagcxFloat32;
+      *sdcclType = sdcclFloat32;
       return ncclSuccess;
     case ncclFloat64:
-      *flagcxType = flagcxFloat64;
+      *sdcclType = sdcclFloat64;
       return ncclSuccess;
     case ncclBfloat16:
-      *flagcxType = flagcxBfloat16;
+      *sdcclType = sdcclBfloat16;
       return ncclSuccess;
     default:
-      /* ncclFloat8e4m3 (10), ncclFloat8e5m2 (11) have no FlagCX equivalent */
+      /* ncclFloat8e4m3 (10), ncclFloat8e5m2 (11) have no SDCCL equivalent */
       return ncclInvalidUsage;
   }
 }
 
 /* ──────────────────────────────────────────────────────────────────────
- * Helper: ncclRedOp_t -> flagcxRedOp_t
+ * Helper: ncclRedOp_t -> sdcclRedOp_t
  * ────────────────────────────────────────────────────────────────────── */
 
-static ncclResult_t toFlagcxRedOp(ncclRedOp_t ncclOp, flagcxRedOp_t *flagcxOp) {
+static ncclResult_t toSdcclRedOp(ncclRedOp_t ncclOp, sdcclRedOp_t *sdcclOp) {
   if ((int)ncclOp >= 0 && (int)ncclOp < (int)ncclNumOps) {
-    *flagcxOp = (flagcxRedOp_t)(int)ncclOp;
+    *sdcclOp = (sdcclRedOp_t)(int)ncclOp;
     return ncclSuccess;
   }
   /* Custom / dynamic reduction ops are not supported */
@@ -257,26 +257,26 @@ static ncclResult_t toFlagcxRedOp(ncclRedOp_t ncclOp, flagcxRedOp_t *flagcxOp) {
 }
 
 /* ──────────────────────────────────────────────────────────────────────
- * Helper: flagcxResult_t -> ncclResult_t
+ * Helper: sdcclResult_t -> ncclResult_t
  * ────────────────────────────────────────────────────────────────────── */
 
-static ncclResult_t toNcclResult(flagcxResult_t res) {
+static ncclResult_t toNcclResult(sdcclResult_t res) {
   switch (res) {
-    case flagcxSuccess:
+    case sdcclSuccess:
       return ncclSuccess;
-    case flagcxUnhandledDeviceError:
+    case sdcclUnhandledDeviceError:
       return ncclUnhandledCudaError;
-    case flagcxSystemError:
+    case sdcclSystemError:
       return ncclSystemError;
-    case flagcxInternalError:
+    case sdcclInternalError:
       return ncclInternalError;
-    case flagcxInvalidArgument:
+    case sdcclInvalidArgument:
       return ncclInvalidArgument;
-    case flagcxInvalidUsage:
+    case sdcclInvalidUsage:
       return ncclInvalidUsage;
-    case flagcxRemoteError:
+    case sdcclRemoteError:
       return ncclRemoteError;
-    case flagcxInProgress:
+    case sdcclInProgress:
       return ncclInProgress;
     default:
       return ncclInternalError;
@@ -332,7 +332,7 @@ const char *ncclGetLastError(ncclComm_t comm) {
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return nullptr;
-  return flagcxGetLastError(comm->handler->comm);
+  return sdcclGetLastError(comm->handler->comm);
 }
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -347,18 +347,18 @@ ncclResult_t ncclGetUniqueId(ncclUniqueId *uniqueId) {
   if (uniqueId == nullptr)
     return ncclInvalidArgument;
 
-  flagcxUniqueId_t flagcxId = nullptr;
-  flagcxResult_t res = flagcxGetUniqueId(&flagcxId);
-  if (res != flagcxSuccess) {
+  sdcclUniqueId_t sdcclId = nullptr;
+  sdcclResult_t res = sdcclGetUniqueId(&sdcclId);
+  if (res != sdcclSuccess) {
     return toNcclResult(res);
   }
 
-  /* flagcxBootstrapHandle fits in NCCL_UNIQUE_ID_BYTES (128).
-   * Copy the first 128 bytes of the 256-byte flagcxUniqueId. */
+  /* sdcclBootstrapHandle fits in NCCL_UNIQUE_ID_BYTES (128).
+   * Copy the first 128 bytes of the 256-byte sdcclUniqueId. */
   memset(uniqueId, 0, sizeof(ncclUniqueId));
-  memcpy(uniqueId->internal, flagcxId->internal, NCCL_UNIQUE_ID_BYTES);
+  memcpy(uniqueId->internal, sdcclId->internal, NCCL_UNIQUE_ID_BYTES);
 
-  free(flagcxId);
+  free(sdcclId);
   return ncclSuccess;
 }
 
@@ -379,30 +379,30 @@ ncclResult_t ncclCommInitRank(ncclComm_t *comm, int nranks, ncclUniqueId commId,
   if (c == nullptr)
     return ncclSystemError;
 
-  /* Init FlagCX handler group */
-  flagcxResult_t res = flagcxHandleInit(&c->handler);
-  if (res != flagcxSuccess) {
+  /* Init SDCCL handler group */
+  sdcclResult_t res = sdcclHandleInit(&c->handler);
+  if (res != sdcclSuccess) {
     free(c);
     return toNcclResult(res);
   }
 
-  /* Reconstruct a flagcxUniqueId from the NCCL 128-byte id.
+  /* Reconstruct a sdcclUniqueId from the NCCL 128-byte id.
    * Zero-init the full 256-byte struct, then copy in the 128-byte handle. */
-  memset(c->handler->uniqueId, 0, sizeof(flagcxUniqueId));
+  memset(c->handler->uniqueId, 0, sizeof(sdcclUniqueId));
   memcpy(c->handler->uniqueId->internal, commId.internal, NCCL_UNIQUE_ID_BYTES);
 
-  /* Init the FlagCX communicator */
+  /* Init the SDCCL communicator */
   res =
-      flagcxCommInitRank(&c->handler->comm, nranks, c->handler->uniqueId, rank);
-  if (res != flagcxSuccess) {
-    flagcxHandleFree(c->handler);
+      sdcclCommInitRank(&c->handler->comm, nranks, c->handler->uniqueId, rank);
+  if (res != sdcclSuccess) {
+    sdcclHandleFree(c->handler);
     free(c);
     return toNcclResult(res);
   }
 
   c->rank = rank;
   c->nranks = nranks;
-  c->asyncError = flagcxSuccess;
+  c->asyncError = sdcclSuccess;
 
   *comm = c;
   return ncclSuccess;
@@ -411,7 +411,7 @@ ncclResult_t ncclCommInitRank(ncclComm_t *comm, int nranks, ncclUniqueId commId,
 ncclResult_t ncclCommInitRankConfig(ncclComm_t *comm, int nranks,
                                     ncclUniqueId commId, int rank,
                                     ncclConfig_t *config) {
-  /* Config fields are NCCL-specific; FlagCX has no equivalent.
+  /* Config fields are NCCL-specific; SDCCL has no equivalent.
    * Delegate to the non-config version (which handles the guard). */
   (void)config;
   return ncclCommInitRank(comm, nranks, commId, rank);
@@ -424,7 +424,7 @@ ncclResult_t ncclCommFinalize(ncclComm_t comm) {
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  return toNcclResult(flagcxCommFinalize(comm->handler->comm));
+  return toNcclResult(sdcclCommFinalize(comm->handler->comm));
 }
 
 ncclResult_t ncclCommDestroy(ncclComm_t comm) {
@@ -434,10 +434,10 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  flagcxResult_t res = flagcxCommDestroy(comm->handler->comm);
-  /* flagcxCommDestroy frees internal resources but not the comm struct.
-   * flagcxHandleFree will free the comm struct pointer along with handler. */
-  flagcxHandleFree(comm->handler);
+  sdcclResult_t res = sdcclCommDestroy(comm->handler->comm);
+  /* sdcclCommDestroy frees internal resources but not the comm struct.
+   * sdcclHandleFree will free the comm struct pointer along with handler. */
+  sdcclHandleFree(comm->handler);
   free(comm);
   return toNcclResult(res);
 }
@@ -449,8 +449,8 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  flagcxResult_t res = flagcxCommAbort(comm->handler->comm);
-  flagcxHandleFree(comm->handler);
+  sdcclResult_t res = sdcclCommAbort(comm->handler->comm);
+  sdcclHandleFree(comm->handler);
   free(comm);
   return toNcclResult(res);
 }
@@ -466,7 +466,7 @@ ncclResult_t ncclCommCount(const ncclComm_t comm, int *count) {
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  return toNcclResult(flagcxCommCount(comm->handler->comm, count));
+  return toNcclResult(sdcclCommCount(comm->handler->comm, count));
 }
 
 ncclResult_t ncclCommCuDevice(const ncclComm_t comm, int *device) {
@@ -476,7 +476,7 @@ ncclResult_t ncclCommCuDevice(const ncclComm_t comm, int *device) {
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  return toNcclResult(flagcxCommGetDeviceNumber(comm->handler->comm, device));
+  return toNcclResult(sdcclCommGetDeviceNumber(comm->handler->comm, device));
 }
 
 ncclResult_t ncclCommUserRank(const ncclComm_t comm, int *rank) {
@@ -486,7 +486,7 @@ ncclResult_t ncclCommUserRank(const ncclComm_t comm, int *rank) {
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  return toNcclResult(flagcxCommUserRank(comm->handler->comm, rank));
+  return toNcclResult(sdcclCommUserRank(comm->handler->comm, rank));
 }
 
 ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
@@ -496,12 +496,12 @@ ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  flagcxResult_t flagcxAsync;
-  flagcxResult_t res =
-      flagcxCommGetAsyncError(comm->handler->comm, &flagcxAsync);
-  if (res != flagcxSuccess)
+  sdcclResult_t sdcclAsync;
+  sdcclResult_t res =
+      sdcclCommGetAsyncError(comm->handler->comm, &sdcclAsync);
+  if (res != sdcclSuccess)
     return toNcclResult(res);
-  *asyncError = toNcclResult(flagcxAsync);
+  *asyncError = toNcclResult(sdcclAsync);
   return ncclSuccess;
 }
 
@@ -518,7 +518,7 @@ ncclResult_t ncclCommRegister(const ncclComm_t comm, void *buff, size_t size,
   if (comm == nullptr)
     return ncclInvalidArgument;
   return toNcclResult(
-      flagcxCommRegister(comm->handler->comm, buff, size, handle));
+      sdcclCommRegister(comm->handler->comm, buff, size, handle));
 }
 
 ncclResult_t ncclCommDeregister(const ncclComm_t comm, void *handle) {
@@ -528,7 +528,7 @@ ncclResult_t ncclCommDeregister(const ncclComm_t comm, void *handle) {
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  return toNcclResult(flagcxCommDeregister(comm->handler->comm, handle));
+  return toNcclResult(sdcclCommDeregister(comm->handler->comm, handle));
 }
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2, 27, 3)
@@ -541,8 +541,8 @@ ncclResult_t ncclCommWindowRegister(ncclComm_t comm, void *buff, size_t size,
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  return toNcclResult(flagcxCommWindowRegister(
-      comm->handler->comm, buff, size, (flagcxWindow_t *)win, winFlags));
+  return toNcclResult(sdcclCommWindowRegister(
+      comm->handler->comm, buff, size, (sdcclWindow_t *)win, winFlags));
 }
 
 ncclResult_t ncclCommWindowDeregister(ncclComm_t comm, ncclWindow_t win) {
@@ -553,7 +553,7 @@ ncclResult_t ncclCommWindowDeregister(ncclComm_t comm, ncclWindow_t win) {
   if (comm == nullptr)
     return ncclInvalidArgument;
   return toNcclResult(
-      flagcxCommWindowDeregister(comm->handler->comm, (flagcxWindow_t)win));
+      sdcclCommWindowDeregister(comm->handler->comm, (sdcclWindow_t)win));
 }
 #endif
 
@@ -566,7 +566,7 @@ ncclResult_t ncclMemAlloc(void **ptr, size_t size) {
     return getRealNccl().ncclMemAlloc(ptr, size);
   }
   recursionGuard guard(inWrapper);
-  return toNcclResult(flagcxMemAlloc(ptr, size));
+  return toNcclResult(sdcclMemAlloc(ptr, size));
 }
 
 ncclResult_t ncclMemFree(void *ptr) {
@@ -574,7 +574,7 @@ ncclResult_t ncclMemFree(void *ptr) {
     return getRealNccl().ncclMemFree(ptr);
   }
   recursionGuard guard(inWrapper);
-  return toNcclResult(flagcxMemFree(ptr));
+  return toNcclResult(sdcclMemFree(ptr));
 }
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -586,7 +586,7 @@ ncclResult_t ncclGroupStart() {
     return getRealNccl().ncclGroupStart();
   }
   recursionGuard guard(inWrapper);
-  return toNcclResult(flagcxGroupStart(nullptr));
+  return toNcclResult(sdcclGroupStart(nullptr));
 }
 
 ncclResult_t ncclGroupEnd() {
@@ -594,7 +594,7 @@ ncclResult_t ncclGroupEnd() {
     return getRealNccl().ncclGroupEnd();
   }
   recursionGuard guard(inWrapper);
-  return toNcclResult(flagcxGroupEnd(nullptr));
+  return toNcclResult(sdcclGroupEnd(nullptr));
 }
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -611,15 +611,15 @@ ncclResult_t ncclAllReduce(const void *sendbuff, void *recvbuff, size_t count,
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  flagcxDataType_t fType;
-  flagcxRedOp_t fOp;
+  sdcclDataType_t fType;
+  sdcclRedOp_t fOp;
   ncclResult_t r;
-  if ((r = toFlagcxDataType(datatype, &fType)) != ncclSuccess)
+  if ((r = toSdcclDataType(datatype, &fType)) != ncclSuccess)
     return r;
-  if ((r = toFlagcxRedOp(op, &fOp)) != ncclSuccess)
+  if ((r = toSdcclRedOp(op, &fOp)) != ncclSuccess)
     return r;
-  FlagcxStreamWrapper sw(stream);
-  return toNcclResult(flagcxAllReduce(sendbuff, recvbuff, count, fType, fOp,
+  SdcclStreamWrapper sw(stream);
+  return toNcclResult(sdcclAllReduce(sendbuff, recvbuff, count, fType, fOp,
                                       comm->handler->comm, sw.stream));
 }
 
@@ -633,12 +633,12 @@ ncclResult_t ncclBroadcast(const void *sendbuff, void *recvbuff, size_t count,
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  flagcxDataType_t fType;
+  sdcclDataType_t fType;
   ncclResult_t r;
-  if ((r = toFlagcxDataType(datatype, &fType)) != ncclSuccess)
+  if ((r = toSdcclDataType(datatype, &fType)) != ncclSuccess)
     return r;
-  FlagcxStreamWrapper sw(stream);
-  return toNcclResult(flagcxBroadcast(sendbuff, recvbuff, count, fType, root,
+  SdcclStreamWrapper sw(stream);
+  return toNcclResult(sdcclBroadcast(sendbuff, recvbuff, count, fType, root,
                                       comm->handler->comm, sw.stream));
 }
 
@@ -652,15 +652,15 @@ ncclResult_t ncclReduce(const void *sendbuff, void *recvbuff, size_t count,
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  flagcxDataType_t fType;
-  flagcxRedOp_t fOp;
+  sdcclDataType_t fType;
+  sdcclRedOp_t fOp;
   ncclResult_t r;
-  if ((r = toFlagcxDataType(datatype, &fType)) != ncclSuccess)
+  if ((r = toSdcclDataType(datatype, &fType)) != ncclSuccess)
     return r;
-  if ((r = toFlagcxRedOp(op, &fOp)) != ncclSuccess)
+  if ((r = toSdcclRedOp(op, &fOp)) != ncclSuccess)
     return r;
-  FlagcxStreamWrapper sw(stream);
-  return toNcclResult(flagcxReduce(sendbuff, recvbuff, count, fType, fOp, root,
+  SdcclStreamWrapper sw(stream);
+  return toNcclResult(sdcclReduce(sendbuff, recvbuff, count, fType, fOp, root,
                                    comm->handler->comm, sw.stream));
 }
 
@@ -674,12 +674,12 @@ ncclResult_t ncclAllGather(const void *sendbuff, void *recvbuff,
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  flagcxDataType_t fType;
+  sdcclDataType_t fType;
   ncclResult_t r;
-  if ((r = toFlagcxDataType(datatype, &fType)) != ncclSuccess)
+  if ((r = toSdcclDataType(datatype, &fType)) != ncclSuccess)
     return r;
-  FlagcxStreamWrapper sw(stream);
-  return toNcclResult(flagcxAllGather(sendbuff, recvbuff, sendcount, fType,
+  SdcclStreamWrapper sw(stream);
+  return toNcclResult(sdcclAllGather(sendbuff, recvbuff, sendcount, fType,
                                       comm->handler->comm, sw.stream));
 }
 
@@ -694,15 +694,15 @@ ncclResult_t ncclReduceScatter(const void *sendbuff, void *recvbuff,
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  flagcxDataType_t fType;
-  flagcxRedOp_t fOp;
+  sdcclDataType_t fType;
+  sdcclRedOp_t fOp;
   ncclResult_t r;
-  if ((r = toFlagcxDataType(datatype, &fType)) != ncclSuccess)
+  if ((r = toSdcclDataType(datatype, &fType)) != ncclSuccess)
     return r;
-  if ((r = toFlagcxRedOp(op, &fOp)) != ncclSuccess)
+  if ((r = toSdcclRedOp(op, &fOp)) != ncclSuccess)
     return r;
-  FlagcxStreamWrapper sw(stream);
-  return toNcclResult(flagcxReduceScatter(sendbuff, recvbuff, recvcount, fType,
+  SdcclStreamWrapper sw(stream);
+  return toNcclResult(sdcclReduceScatter(sendbuff, recvbuff, recvcount, fType,
                                           fOp, comm->handler->comm, sw.stream));
 }
 
@@ -720,13 +720,13 @@ ncclResult_t ncclSend(const void *sendbuff, size_t count,
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  flagcxDataType_t fType;
+  sdcclDataType_t fType;
   ncclResult_t r;
-  if ((r = toFlagcxDataType(datatype, &fType)) != ncclSuccess)
+  if ((r = toSdcclDataType(datatype, &fType)) != ncclSuccess)
     return r;
-  FlagcxStreamWrapper sw(stream);
+  SdcclStreamWrapper sw(stream);
   return toNcclResult(
-      flagcxSend(sendbuff, count, fType, peer, comm->handler->comm, sw.stream));
+      sdcclSend(sendbuff, count, fType, peer, comm->handler->comm, sw.stream));
 }
 
 ncclResult_t ncclRecv(void *recvbuff, size_t count, ncclDataType_t datatype,
@@ -738,13 +738,13 @@ ncclResult_t ncclRecv(void *recvbuff, size_t count, ncclDataType_t datatype,
   recursionGuard guard(inWrapper);
   if (comm == nullptr)
     return ncclInvalidArgument;
-  flagcxDataType_t fType;
+  sdcclDataType_t fType;
   ncclResult_t r;
-  if ((r = toFlagcxDataType(datatype, &fType)) != ncclSuccess)
+  if ((r = toSdcclDataType(datatype, &fType)) != ncclSuccess)
     return r;
-  FlagcxStreamWrapper sw(stream);
+  SdcclStreamWrapper sw(stream);
   return toNcclResult(
-      flagcxRecv(recvbuff, count, fType, peer, comm->handler->comm, sw.stream));
+      sdcclRecv(recvbuff, count, fType, peer, comm->handler->comm, sw.stream));
 }
 
 /* ──────────────────────────────────────────────────────────────────────

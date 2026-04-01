@@ -245,7 +245,7 @@ endif
 endif
 
 ifeq ($(FORCE_FALLBACK), 1)
-	ADAPTOR_FLAG += -DFLAGCX_FORCE_FALLBACK
+	ADAPTOR_FLAG += -DSDCCL_FORCE_FALLBACK
 endif
 
 ifeq ($(USE_GLOO), 1)
@@ -299,32 +299,32 @@ PREFIX ?= /usr/local
 DESTDIR  ?= $(PREFIX)/lib
 
 INCLUDEDIR := \
-	$(abspath flagcx/include) \
-	$(abspath flagcx/adaptor/include) \
-	$(abspath flagcx/runner/include) \
-	$(abspath flagcx/core/include) \
-	$(abspath flagcx/service/include) \
+	$(abspath sdccl/include) \
+	$(abspath sdccl/adaptor/include) \
+	$(abspath sdccl/runner/include) \
+	$(abspath sdccl/core/include) \
+	$(abspath sdccl/service/include) \
 	$(abspath third-party/json/single_include)
 
 LIBSRCFILES:= \
-	$(wildcard flagcx/*.cc) \
-	$(wildcard flagcx/adaptor/*.cc) \
-	$(wildcard flagcx/adaptor/device/*.cc) \
-	$(wildcard flagcx/adaptor/ccl/*.cc) \
-	$(wildcard flagcx/adaptor/net/*.cc) \
-	$(wildcard flagcx/adaptor/tuner/*.cc) \
-	$(wildcard flagcx/runner/*.cc) \
-	$(wildcard flagcx/core/*.cc) \
-	$(wildcard flagcx/service/*.cc)
+	$(wildcard sdccl/*.cc) \
+	$(wildcard sdccl/adaptor/*.cc) \
+	$(wildcard sdccl/adaptor/device/*.cc) \
+	$(wildcard sdccl/adaptor/ccl/*.cc) \
+	$(wildcard sdccl/adaptor/net/*.cc) \
+	$(wildcard sdccl/adaptor/tuner/*.cc) \
+	$(wildcard sdccl/runner/*.cc) \
+	$(wildcard sdccl/core/*.cc) \
+	$(wildcard sdccl/service/*.cc)
 
 ifeq ($(COMPILE_KERNEL), 1)
 DEVSRCFILES:= \
-	$(wildcard flagcx/kernels/*.$(DEVICE_FILE_EXTENSION))
+	$(wildcard sdccl/kernels/*.$(DEVICE_FILE_EXTENSION))
 DEVOBJ:= $(DEVSRCFILES:%.$(DEVICE_FILE_EXTENSION)=$(OBJDIR)/%.o)
 endif
 LIBOBJ:= $(LIBSRCFILES:%.cc=$(OBJDIR)/%.o)
 
-TARGET = libflagcx.so
+TARGET = libsdccl.so
 all: $(LIBDIR)/$(TARGET)
 
 print_var:

@@ -11,10 +11,10 @@ LDFLAGS = -shared \
           -L$(CUDA_HOME)/lib64 -lcudart -lcuda \
           -Wl,-rpath,$(CUDA_HOME)/lib64
 
-build: libflagcx-device-example.so
+build: libsdccl-device-example.so
 
-libflagcx-device-example.so: plugin.cc
+libsdccl-device-example.so: plugin.cc
 	g++ $(CXXFLAGS) $(LDFLAGS) -o $@ $^
 
 clean:
-	rm -f libflagcx-device-example.so
+	rm -f libsdccl-device-example.so

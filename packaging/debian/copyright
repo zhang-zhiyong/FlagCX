@@ -1,18 +1,18 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: FlagCX
+Upstream-Name: SDCCL
 Upstream-Contact: FlagOS <contact@flagos.io>
-Source: https://github.com/flagos-ai/FlagCX
+Source: https://github.com/flagos-ai/SDCCL
 
 Files: *
 Copyright: 2024-2026 FlagOS Contributors
 License: Apache-2.0
 
-Files: flagcx/service/* flagcx/core/*
-Copyright: 2024-2026 FlagCX Contributors
+Files: sdccl/service/* sdccl/core/*
+Copyright: 2024-2026 SDCCL Contributors
            Original NCCL components under NCCL license
 License: Apache-2.0 and NCCL
 Comment: Contains NCCL-derived code under separate license terms.
- See flagcx/service/LICENSE-NCCL.txt and flagcx/core/LICENSE-NCCL.txt
+ See sdccl/service/LICENSE-NCCL.txt and sdccl/core/LICENSE-NCCL.txt
 
 Files: packaging/debian/*
 Copyright: 2026 FlagOS Contributors <contact@flagos.io>
@@ -35,5 +35,5 @@ License: Apache-2.0
  found in "/usr/share/common-licenses/Apache-2.0".
 
 License: NCCL
- See flagcx/service/LICENSE-NCCL.txt and flagcx/core/LICENSE-NCCL.txt
+ See sdccl/service/LICENSE-NCCL.txt and sdccl/core/LICENSE-NCCL.txt
  for NCCL license terms.

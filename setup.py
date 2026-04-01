@@ -4,7 +4,7 @@ import subprocess
 import shutil
 import multiprocessing
 
-# Disable auto load flagcx when setup
+# Disable auto load sdccl when setup
 os.environ["TORCH_DEVICE_BACKEND_AUTOLOAD"] = "0"
 
 # Disable build isolation for torch dependency
@@ -33,7 +33,7 @@ from _build_config import (
 # ---------------------------------------------------------------------------
 
 adaptor = detect_adaptor()
-print(f"[flagcx] Using {adaptor} adaptor")
+print(f"[sdccl] Using {adaptor} adaptor")
 
 adaptor_flag = ADAPTOR_MAP[adaptor]
 adaptor_make_flag = ADAPTOR_TO_MAKE_FLAG[adaptor]
@@ -44,19 +44,19 @@ torch_flag = detect_torch_flag()
 # ---------------------------------------------------------------------------
 
 sources = [
-    os.path.join("plugin", "torch", "flagcx", "src", "backend_flagcx.cpp"),
-    os.path.join("plugin", "torch", "flagcx", "src", "utils_flagcx.cpp"),
+    os.path.join("plugin", "torch", "sdccl", "src", "backend_sdccl.cpp"),
+    os.path.join("plugin", "torch", "sdccl", "src", "utils_sdccl.cpp"),
 ]
 
 include_dirs = [
-    os.path.join(PLUGIN_DIR, "flagcx", "include"),
-    os.path.join(ROOT_DIR, "flagcx", "include"),
+    os.path.join(PLUGIN_DIR, "sdccl", "include"),
+    os.path.join(ROOT_DIR, "sdccl", "include"),
     os.path.join(ROOT_DIR, "third-party", "json", "single_include"),
 ]
 
-# Will be updated in build_ext to point at the built libflagcx.so
+# Will be updated in build_ext to point at the built libsdccl.so
 library_dirs = []
-libs = ["flagcx"]
+libs = ["sdccl"]
 
 # Add device-specific paths
 dev_includes, dev_libdirs, dev_libs = get_device_config(adaptor_flag)
@@ -82,13 +82,13 @@ if BuildExtension is not None:
                 ROOT_DIR, "third-party", "json", "single_include"
             )
             if not os.path.isdir(submodule_marker):
-                print("[flagcx] Initializing git submodules ...")
+                print("[sdccl] Initializing git submodules ...")
                 subprocess.check_call(
                     ["git", "submodule", "update", "--init", "--recursive"],
                     cwd=ROOT_DIR,
                 )
 
-            # -- Step 1: Build libflagcx.so via make --
+            # -- Step 1: Build libsdccl.so via make --
             build_dir = os.path.join(ROOT_DIR, "build")
             lib_dir = os.path.join(build_dir, "lib")
 
@@ -107,16 +107,16 @@ if BuildExtension is not None:
 
             nproc = str(multiprocessing.cpu_count())
             make_cmd = ["make", "-C", ROOT_DIR, "-j", nproc] + make_args
-            print(f"[flagcx] Running: {' '.join(make_cmd)}")
+            print(f"[sdccl] Running: {' '.join(make_cmd)}")
             subprocess.check_call(make_cmd)
 
-            src_so = os.path.join(lib_dir, "libflagcx.so")
+            src_so = os.path.join(lib_dir, "libsdccl.so")
 
             # -- Step 2: Update library_dirs and rpath for the extension --
             for ext in self.extensions:
                 if lib_dir not in ext.library_dirs:
                     ext.library_dirs.insert(0, lib_dir)
-                # Set $ORIGIN rpath so _C.so finds libflagcx.so in the same directory
+                # Set $ORIGIN rpath so _C.so finds libsdccl.so in the same directory
                 # Preserve device-specific rpaths so runtime linker can find device libs
                 origin_rpath = "-Wl,-rpath,$ORIGIN"
                 dev_rpaths = ["-Wl,-rpath," + d for d in dev_libdirs]
@@ -130,19 +130,19 @@ if BuildExtension is not None:
             # -- Step 3: Build the torch C++ extension --
             super().build_extensions()
 
-            # -- Step 4: Copy libflagcx.so to where it's needed --
+            # -- Step 4: Copy libsdccl.so to where it's needed --
             # Into the build output dir (for wheels / regular installs)
-            build_pkg_dir = os.path.join(self.build_lib, "flagcx")
+            build_pkg_dir = os.path.join(self.build_lib, "sdccl")
             os.makedirs(build_pkg_dir, exist_ok=True)
-            dst_build_so = os.path.join(build_pkg_dir, "libflagcx.so")
-            print(f"[flagcx] Copying {src_so} -> {dst_build_so}")
+            dst_build_so = os.path.join(build_pkg_dir, "libsdccl.so")
+            print(f"[sdccl] Copying {src_so} -> {dst_build_so}")
             shutil.copy2(src_so, dst_build_so)
 
             # Into the source package dir (for editable installs, where
             # _C.so lives in-tree and uses $ORIGIN rpath to find it)
-            src_pkg_dir = os.path.join(ROOT_DIR, "plugin", "torch", "flagcx")
-            dst_src_so = os.path.join(src_pkg_dir, "libflagcx.so")
-            print(f"[flagcx] Copying {src_so} -> {dst_src_so}")
+            src_pkg_dir = os.path.join(ROOT_DIR, "plugin", "torch", "sdccl")
+            dst_src_so = os.path.join(src_pkg_dir, "libsdccl.so")
+            print(f"[sdccl] Copying {src_so} -> {dst_src_so}")
             shutil.copy2(src_so, dst_src_so)
 else:
     BuildExtWithMake = None
@@ -154,7 +154,7 @@ else:
 ext_modules = []
 if CppExtension is not None:
     module = CppExtension(
-        name="flagcx._C",
+        name="sdccl._C",
         sources=sources,
         include_dirs=include_dirs,
         extra_compile_args={"cxx": [adaptor_flag, torch_flag]},
@@ -176,13 +176,13 @@ if BuildExtWithMake is not None:
 os.makedirs(os.path.join(ROOT_DIR, "build"), exist_ok=True)
 
 setup(
-    name="flagcx",
+    name="sdccl",
     version="0.10.0",
-    description="FlagCX: A unified collective communication library",
-    package_dir={"flagcx": "plugin/torch/flagcx"},
-    packages=["flagcx"],
-    package_data={"flagcx": ["*.so"]},
+    description="SDCCL: A unified collective communication library",
+    package_dir={"sdccl": "plugin/torch/sdccl"},
+    packages=["sdccl"],
+    package_data={"sdccl": ["*.so"]},
     ext_modules=ext_modules,
     cmdclass=cmdclass,
-    entry_points={"torch.backends": ["flagcx = flagcx:init"]},
+    entry_points={"torch.backends": ["sdccl = sdccl:init"]},
 )

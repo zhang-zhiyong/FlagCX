@@ -30,8 +30,8 @@ if [ $? -ne 0 ]; then
 fi
 
 mpirun -np 8 \
-  -x FLAGCX_MEM_ENABLE=1 \
-  -x FLAGCX_USE_HETERO_COMM=1 \
+  -x SDCCL_MEM_ENABLE=1 \
+  -x SDCCL_USE_HETERO_COMM=1 \
   ./test_alltoall -b 128M -e 1G -f 2 -p 1
 if [ $? -ne 0 ]; then
     echo "test_alltoall in uniRunner mode failed!"
@@ -45,8 +45,8 @@ if [ $? -ne 0 ]; then
 fi
 
 mpirun -np 8 \
-  -x FLAGCX_MEM_ENABLE=1 \
-  -x FLAGCX_USE_HETERO_COMM=1 \
+  -x SDCCL_MEM_ENABLE=1 \
+  -x SDCCL_USE_HETERO_COMM=1 \
   ./test_alltoallv -b 128M -e 1G -f 2 -p 1
 if [ $? -ne 0 ]; then
     echo "test_alltoallv in uniRunner mode failed!"
@@ -60,8 +60,8 @@ if [ $? -ne 0 ]; then
 fi
 
 mpirun -np 8 \
-  -x FLAGCX_MEM_ENABLE=1 \
-  -x FLAGCX_USE_HETERO_COMM=1 \
+  -x SDCCL_MEM_ENABLE=1 \
+  -x SDCCL_USE_HETERO_COMM=1 \
   ./test_sendrecv -b 128M -e 1G -f 2 -p 1
 if [ $? -ne 0 ]; then
     echo "test_sendrecv in uniRunner mode failed!"
@@ -81,8 +81,8 @@ if [ $? -ne 0 ]; then
 fi
 
 mpirun -np 8 \
-  -x FLAGCX_MEM_ENABLE=1 \
-  -x FLAGCX_USE_HETERO_COMM=1 \
+  -x SDCCL_MEM_ENABLE=1 \
+  -x SDCCL_USE_HETERO_COMM=1 \
   ./test_allgather -b 128M -e 1G -f 2 -p 1
 if [ $? -ne 0 ]; then
     echo "test_allgather in uniRunner mode failed!"
@@ -102,8 +102,8 @@ if [ $? -ne 0 ]; then
 fi
 
 mpirun -np 8 \
-  -x FLAGCX_MEM_ENABLE=1 \
-  -x FLAGCX_USE_HETERO_COMM=1 \
+  -x SDCCL_MEM_ENABLE=1 \
+  -x SDCCL_USE_HETERO_COMM=1 \
   ./test_broadcast -b 128M -e 1G -f 2 -r 0 -p 1
 if [ $? -ne 0 ]; then
     echo "test_broadcast in uniRunner mode failed!"
@@ -117,8 +117,8 @@ if [ $? -ne 0 ]; then
 fi
 
 mpirun -np 8 \
-  -x FLAGCX_MEM_ENABLE=1 \
-  -x FLAGCX_USE_HETERO_COMM=1 \
+  -x SDCCL_MEM_ENABLE=1 \
+  -x SDCCL_USE_HETERO_COMM=1 \
   ./test_gather -b 128M -e 1G -f 2 -r 0 -p 1
 if [ $? -ne 0 ]; then
     echo "test_gather in uniRunner mode failed!"
@@ -132,8 +132,8 @@ if [ $? -ne 0 ]; then
 fi
 
 mpirun -np 8 \
-  -x FLAGCX_MEM_ENABLE=1 \
-  -x FLAGCX_USE_HETERO_COMM=1 \
+  -x SDCCL_MEM_ENABLE=1 \
+  -x SDCCL_USE_HETERO_COMM=1 \
   ./test_scatter -b 128M -e 1G -f 2 -r 0 -p 1
 if [ $? -ne 0 ]; then
     echo "test_scatter in uniRunner mode failed!"

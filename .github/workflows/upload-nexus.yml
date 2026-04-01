@@ -70,7 +70,7 @@ jobs:
 
           # Upload packages for all vendors
           for vendor in nvidia metax; do
-            vendor_dir="packages/flagcx-${vendor}-packages"
+            vendor_dir="packages/sdccl-${vendor}-packages"
 
             if [ -d "$vendor_dir" ]; then
               echo ""
@@ -102,5 +102,5 @@ jobs:
           echo "Packages uploaded to Nexus APT repository:"
           find packages/ -name "*.deb" -exec basename {} \;
           echo ""
-          echo "To use the repository, add to /etc/apt/sources.list.d/flagcx.list:"
+          echo "To use the repository, add to /etc/apt/sources.list.d/sdccl.list:"
           echo "deb https://resource.flagos.net/repository/flagos-apt-hosted/ flagos-apt-hosted main"

@@ -1,5 +1,5 @@
 """
-Shared build configuration for the flagcx torch plugin.
+Shared build configuration for the sdccl torch plugin.
 
 Used by both the root setup.py and plugin/torch/setup.py to avoid
 duplicating adaptor detection, device-specific paths, and extension
@@ -73,9 +73,9 @@ def _detect_platform():
 
 
 def detect_adaptor():
-    """Detect the adaptor from FLAGCX_ADAPTOR env var, --adaptor CLI arg, or
+    """Detect the adaptor from SDCCL_ADAPTOR env var, --adaptor CLI arg, or
     USE_* env vars. Returns the adaptor name string. Defaults to 'nvidia'."""
-    adaptor = os.environ.get("FLAGCX_ADAPTOR", "").strip()
+    adaptor = os.environ.get("SDCCL_ADAPTOR", "").strip()
 
     # Check --adaptor CLI argument (consumed from sys.argv)
     if not adaptor and "--adaptor" in sys.argv:
@@ -98,14 +98,14 @@ def detect_adaptor():
     if not adaptor:
         adaptor = _detect_platform()
         if adaptor:
-            print(f"[flagcx] Auto-detected platform: {adaptor}")
+            print(f"[sdccl] Auto-detected platform: {adaptor}")
 
     # Fail with guidance if nothing detected
     if not adaptor:
         print(
-            "\n[flagcx] WARNING: Failed to auto-detect hardware platform.\n"
+            "\n[sdccl] WARNING: Failed to auto-detect hardware platform.\n"
             "Please specify the adaptor manually using one of:\n"
-            "  FLAGCX_ADAPTOR=<adaptor> pip install . --no-build-isolation\n"
+            "  SDCCL_ADAPTOR=<adaptor> pip install . --no-build-isolation\n"
             "  pip install . --no-build-isolation --adaptor <adaptor>\n"
             f"Valid adaptors: {VALID_ADAPTORS}\n"
         )

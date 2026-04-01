@@ -1,7 +1,7 @@
 /*************************************************************************
  * Copyright (c) 2026 BAAI. All rights reserved.
  *
- * Intra-node kernel tests using FlagCX Device API.
+ * Intra-node kernel tests using SDCCL Device API.
  *
  * Currently tests AllReduce: each rank fills its buffer with (rank+1), then
  * AllReduce(sum) produces nRanks*(nRanks+1)/2 on every element.
@@ -13,15 +13,15 @@
  *   -w <warmup>    -n <iters>     -p <printbuffer 0/1>
  ************************************************************************/
 
-#include "flagcx.h"
-#include "flagcx_kernel.h"
+#include "sdccl.h"
+#include "sdccl_kernel.h"
 #include "tools.h"
 #include <cassert>
 #include <cmath>
 #include <cstring>
 #include <iostream>
 
-#define DATATYPE flagcxFloat
+#define DATATYPE sdcclFloat
 
 int main(int argc, char *argv[]) {
   parser args(argc, argv);
@@ -37,11 +37,11 @@ int main(int argc, char *argv[]) {
   assert(stepFactor > 1 && "Step factor must be > 1 to avoid infinite loop "
                            "when increasing message size");
 
-  flagcxHandlerGroup_t handler;
-  FLAGCXCHECK(flagcxHandleInit(&handler));
-  flagcxUniqueId_t &uniqueId = handler->uniqueId;
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+  sdcclHandlerGroup_t handler;
+  SDCCLCHECK(sdcclHandleInit(&handler));
+  sdcclUniqueId_t &uniqueId = handler->uniqueId;
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   int color = 0;
   int worldSize = 1, worldRank = 0;
@@ -51,67 +51,67 @@ int main(int argc, char *argv[]) {
              splitComm, splitMask);
 
   int nGpu;
-  FLAGCXCHECK(devHandle->getDeviceCount(&nGpu));
-  FLAGCXCHECK(devHandle->setDevice(worldRank % nGpu));
+  SDCCLCHECK(devHandle->getDeviceCount(&nGpu));
+  SDCCLCHECK(devHandle->setDevice(worldRank % nGpu));
 
   if (proc == 0)
-    FLAGCXCHECK(flagcxGetUniqueId(&uniqueId));
-  MPI_Bcast((void *)uniqueId, sizeof(flagcxUniqueId), MPI_BYTE, 0, splitComm);
+    SDCCLCHECK(sdcclGetUniqueId(&uniqueId));
+  MPI_Bcast((void *)uniqueId, sizeof(sdcclUniqueId), MPI_BYTE, 0, splitComm);
   MPI_Barrier(MPI_COMM_WORLD);
 
-  FLAGCXCHECK(flagcxCommInitRank(&comm, totalProcs, uniqueId, proc));
+  SDCCLCHECK(sdcclCommInitRank(&comm, totalProcs, uniqueId, proc));
 
   // Create device communicator for custom kernel usage
-  flagcxDevComm_t devComm = nullptr;
-  flagcxDevCommRequirements reqs = FLAGCX_DEV_COMM_REQUIREMENTS_INITIALIZER;
-  reqs.intraBarrierCount = FLAGCX_DEVICE_CTA_COUNT;
-  FLAGCXCHECK(flagcxDevCommCreate(comm, &reqs, &devComm));
+  sdcclDevComm_t devComm = nullptr;
+  sdcclDevCommRequirements reqs = SDCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.intraBarrierCount = SDCCL_DEVICE_CTA_COUNT;
+  SDCCLCHECK(sdcclDevCommCreate(comm, &reqs, &devComm));
 
-  flagcxStream_t stream;
-  FLAGCXCHECK(devHandle->streamCreate(&stream));
+  sdcclStream_t stream;
+  SDCCLCHECK(devHandle->streamCreate(&stream));
 
   // Allocate device buffers
   void *sendbuff, *recvbuff;
-  FLAGCXCHECK(
-      devHandle->deviceMalloc(&sendbuff, maxBytes, flagcxMemDevice, NULL));
-  FLAGCXCHECK(
-      devHandle->deviceMalloc(&recvbuff, maxBytes, flagcxMemDevice, NULL));
+  SDCCLCHECK(
+      devHandle->deviceMalloc(&sendbuff, maxBytes, sdcclMemDevice, NULL));
+  SDCCLCHECK(
+      devHandle->deviceMalloc(&recvbuff, maxBytes, sdcclMemDevice, NULL));
 
   // Allocate registered buffer + device memory handle
-  // -R 0: Raw (cudaMalloc + implicit IPC via flagcxDevMemCreate)
-  // -R 1: IPC (cudaMalloc + flagcxCommRegister + flagcxDevMemCreate)
-  // -R 2: Window (VMM + flagcxCommWindowRegister + flagcxDevMemCreate)
+  // -R 0: Raw (cudaMalloc + implicit IPC via sdcclDevMemCreate)
+  // -R 1: IPC (cudaMalloc + sdcclCommRegister + sdcclDevMemCreate)
+  // -R 2: Window (VMM + sdcclCommWindowRegister + sdcclDevMemCreate)
   void *regBuff = nullptr;
   void *regHandle = nullptr;
-  flagcxWindow_t win = nullptr;
-  flagcxDevMem_t devMem = nullptr;
+  sdcclWindow_t win = nullptr;
+  sdcclDevMem_t devMem = nullptr;
   // -R 0 uses cudaMalloc (IPC-compatible).
-  // -R 1/-R 2 use flagcxMemAlloc with comm.
+  // -R 1/-R 2 use sdcclMemAlloc with comm.
   if (localRegister == 0) {
-    FLAGCXCHECK(
-        devHandle->deviceMalloc(&regBuff, maxBytes, flagcxMemDevice, NULL));
+    SDCCLCHECK(
+        devHandle->deviceMalloc(&regBuff, maxBytes, sdcclMemDevice, NULL));
   } else {
-    FLAGCXCHECK(flagcxMemAlloc(&regBuff, maxBytes));
+    SDCCLCHECK(sdcclMemAlloc(&regBuff, maxBytes));
   }
   if (localRegister == 2) {
     // Window mode (NCCL > 2.28 only; graceful fallback on Fallback)
-    FLAGCXCHECK(flagcxCommWindowRegister(comm, regBuff, maxBytes, &win,
-                                         FLAGCX_WIN_DEFAULT));
-    FLAGCXCHECK(flagcxDevMemCreate(comm, regBuff, maxBytes, win, &devMem));
+    SDCCLCHECK(sdcclCommWindowRegister(comm, regBuff, maxBytes, &win,
+                                         SDCCL_WIN_DEFAULT));
+    SDCCLCHECK(sdcclDevMemCreate(comm, regBuff, maxBytes, win, &devMem));
   } else if (localRegister == 1) {
     // IPC mode: explicit NIC registration + implicit IPC peer exchange
-    FLAGCXCHECK(flagcxCommRegister(comm, regBuff, maxBytes, &regHandle));
-    FLAGCXCHECK(flagcxDevMemCreate(comm, regBuff, maxBytes, nullptr, &devMem));
+    SDCCLCHECK(sdcclCommRegister(comm, regBuff, maxBytes, &regHandle));
+    SDCCLCHECK(sdcclDevMemCreate(comm, regBuff, maxBytes, nullptr, &devMem));
   } else {
-    // Raw mode: no explicit registration, implicit IPC via flagcxDevMemCreate
-    FLAGCXCHECK(flagcxDevMemCreate(comm, regBuff, maxBytes, nullptr, &devMem));
+    // Raw mode: no explicit registration, implicit IPC via sdcclDevMemCreate
+    SDCCLCHECK(sdcclDevMemCreate(comm, regBuff, maxBytes, nullptr, &devMem));
   }
 
   // Host buffer for initialization and verification
   void *hostbuff = malloc(maxBytes);
 
   if (proc == 0 && color == 0) {
-    printf("# FlagCX Device API Intra-node AllReduce Benchmark\n");
+    printf("# SDCCL Device API Intra-node AllReduce Benchmark\n");
     printf("# nRanks: %d, regMode: %s\n", totalProcs,
            localRegister == 2   ? "window"
            : localRegister == 1 ? "ipc"
@@ -124,16 +124,16 @@ int main(int argc, char *argv[]) {
   {
     size_t count = maxBytes / sizeof(float);
     for (int i = 0; i < numWarmupIters; i++) {
-      FLAGCXCHECK(devHandle->deviceMemcpy(regBuff, sendbuff,
+      SDCCLCHECK(devHandle->deviceMemcpy(regBuff, sendbuff,
                                           count * sizeof(float),
-                                          flagcxMemcpyDeviceToDevice, stream));
-      FLAGCXCHECK(
-          flagcxIntraAllReduce(devMem, count, DATATYPE, devComm, stream));
-      FLAGCXCHECK(devHandle->deviceMemcpy(recvbuff, regBuff,
+                                          sdcclMemcpyDeviceToDevice, stream));
+      SDCCLCHECK(
+          sdcclIntraAllReduce(devMem, count, DATATYPE, devComm, stream));
+      SDCCLCHECK(devHandle->deviceMemcpy(recvbuff, regBuff,
                                           count * sizeof(float),
-                                          flagcxMemcpyDeviceToDevice, stream));
+                                          sdcclMemcpyDeviceToDevice, stream));
     }
-    FLAGCXCHECK(devHandle->streamSynchronize(stream));
+    SDCCLCHECK(devHandle->streamSynchronize(stream));
   }
 
   for (size_t size = minBytes; size <= maxBytes; size *= stepFactor) {
@@ -147,22 +147,22 @@ int main(int argc, char *argv[]) {
     for (size_t i = 0; i < count; i++) {
       hbuf[i] = (float)(proc + 1);
     }
-    FLAGCXCHECK(devHandle->deviceMemcpy(sendbuff, hostbuff, bytes,
-                                        flagcxMemcpyHostToDevice, NULL));
+    SDCCLCHECK(devHandle->deviceMemcpy(sendbuff, hostbuff, bytes,
+                                        sdcclMemcpyHostToDevice, NULL));
 
     MPI_Barrier(MPI_COMM_WORLD);
 
     // Timed iterations
     timer tim;
     for (int i = 0; i < numIters; i++) {
-      FLAGCXCHECK(devHandle->deviceMemcpy(regBuff, sendbuff, bytes,
-                                          flagcxMemcpyDeviceToDevice, stream));
-      FLAGCXCHECK(
-          flagcxIntraAllReduce(devMem, count, DATATYPE, devComm, stream));
-      FLAGCXCHECK(devHandle->deviceMemcpy(recvbuff, regBuff, bytes,
-                                          flagcxMemcpyDeviceToDevice, stream));
+      SDCCLCHECK(devHandle->deviceMemcpy(regBuff, sendbuff, bytes,
+                                          sdcclMemcpyDeviceToDevice, stream));
+      SDCCLCHECK(
+          sdcclIntraAllReduce(devMem, count, DATATYPE, devComm, stream));
+      SDCCLCHECK(devHandle->deviceMemcpy(recvbuff, regBuff, bytes,
+                                          sdcclMemcpyDeviceToDevice, stream));
     }
-    FLAGCXCHECK(devHandle->streamSynchronize(stream));
+    SDCCLCHECK(devHandle->streamSynchronize(stream));
     double elapsed = tim.elapsed() / numIters;
 
     // Reduce elapsed time across ranks for consistent reporting
@@ -177,8 +177,8 @@ int main(int argc, char *argv[]) {
 
     // Verify correctness: expected value = sum(1..nRanks) = nRanks*(nRanks+1)/2
     memset(hostbuff, 0, bytes);
-    FLAGCXCHECK(devHandle->deviceMemcpy(hostbuff, recvbuff, bytes,
-                                        flagcxMemcpyDeviceToHost, NULL));
+    SDCCLCHECK(devHandle->deviceMemcpy(hostbuff, recvbuff, bytes,
+                                        sdcclMemcpyDeviceToHost, NULL));
 
     float expected = (float)(totalProcs * (totalProcs + 1)) / 2.0f;
     int correct = 1;
@@ -209,24 +209,24 @@ int main(int argc, char *argv[]) {
   }
 
   // Cleanup
-  FLAGCXCHECK(flagcxDevMemDestroy(comm, devMem));
-  FLAGCXCHECK(flagcxDevCommDestroy(comm, devComm));
+  SDCCLCHECK(sdcclDevMemDestroy(comm, devMem));
+  SDCCLCHECK(sdcclDevCommDestroy(comm, devComm));
   if (localRegister == 2) {
-    FLAGCXCHECK(flagcxCommWindowDeregister(comm, win));
+    SDCCLCHECK(sdcclCommWindowDeregister(comm, win));
   } else if (localRegister == 1) {
-    FLAGCXCHECK(flagcxCommDeregister(comm, regHandle));
+    SDCCLCHECK(sdcclCommDeregister(comm, regHandle));
   }
   if (localRegister == 0) {
-    FLAGCXCHECK(devHandle->deviceFree(regBuff, flagcxMemDevice, NULL));
+    SDCCLCHECK(devHandle->deviceFree(regBuff, sdcclMemDevice, NULL));
   } else {
-    FLAGCXCHECK(flagcxMemFree(regBuff));
+    SDCCLCHECK(sdcclMemFree(regBuff));
   }
-  FLAGCXCHECK(devHandle->streamDestroy(stream));
-  FLAGCXCHECK(flagcxCommDestroy(comm));
-  FLAGCXCHECK(devHandle->deviceFree(sendbuff, flagcxMemDevice, NULL));
-  FLAGCXCHECK(devHandle->deviceFree(recvbuff, flagcxMemDevice, NULL));
+  SDCCLCHECK(devHandle->streamDestroy(stream));
+  SDCCLCHECK(sdcclCommDestroy(comm));
+  SDCCLCHECK(devHandle->deviceFree(sendbuff, sdcclMemDevice, NULL));
+  SDCCLCHECK(devHandle->deviceFree(recvbuff, sdcclMemDevice, NULL));
   free(hostbuff);
-  FLAGCXCHECK(flagcxHandleFree(handler));
+  SDCCLCHECK(sdcclHandleFree(handler));
 
   MPI_Finalize();
   return 0;

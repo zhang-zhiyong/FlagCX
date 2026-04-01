@@ -1,9 +1,9 @@
-#include "flagcx.h"
+#include "sdccl.h"
 #include "tools.h"
 #include <cstring>
 #include <iostream>
 
-#define DATATYPE flagcxFloat
+#define DATATYPE sdcclFloat
 
 int main(int argc, char *argv[]) {
   parser args(argc, argv);
@@ -16,11 +16,11 @@ int main(int argc, char *argv[]) {
   uint64_t split_mask = args.getSplitMask();
   int local_register = args.getLocalRegister();
 
-  flagcxHandlerGroup_t handler;
-  flagcxHandleInit(&handler);
-  flagcxUniqueId_t &uniqueId = handler->uniqueId;
-  flagcxComm_t &comm = handler->comm;
-  flagcxDeviceHandle_t &devHandle = handler->devHandle;
+  sdcclHandlerGroup_t handler;
+  sdcclHandleInit(&handler);
+  sdcclUniqueId_t &uniqueId = handler->uniqueId;
+  sdcclComm_t &comm = handler->comm;
+  sdcclDeviceHandle_t &devHandle = handler->devHandle;
 
   int color = 0;
   int worldSize = 1, worldRank = 0;
@@ -34,13 +34,13 @@ int main(int argc, char *argv[]) {
   devHandle->setDevice(worldRank % nGpu);
 
   if (proc == 0)
-    flagcxGetUniqueId(&uniqueId);
-  MPI_Bcast((void *)uniqueId, sizeof(flagcxUniqueId), MPI_BYTE, 0, splitComm);
+    sdcclGetUniqueId(&uniqueId);
+  MPI_Bcast((void *)uniqueId, sizeof(sdcclUniqueId), MPI_BYTE, 0, splitComm);
   MPI_Barrier(MPI_COMM_WORLD);
 
-  flagcxCommInitRank(&comm, totalProcs, uniqueId, proc);
+  sdcclCommInitRank(&comm, totalProcs, uniqueId, proc);
 
-  flagcxStream_t stream;
+  sdcclStream_t stream;
   devHandle->streamCreate(&stream);
 
   void *sendbuff = nullptr;
@@ -55,37 +55,37 @@ int main(int argc, char *argv[]) {
 
   if (local_register) {
     // allocate buffer
-    flagcxMemAlloc(&sendbuff, max_bytes);
-    flagcxMemAlloc(&recvbuff, max_bytes);
+    sdcclMemAlloc(&sendbuff, max_bytes);
+    sdcclMemAlloc(&recvbuff, max_bytes);
     // register buffer
-    flagcxCommRegister(comm, sendbuff, max_bytes, &sendHandle);
-    flagcxCommRegister(comm, recvbuff, max_bytes, &recvHandle);
+    sdcclCommRegister(comm, sendbuff, max_bytes, &sendHandle);
+    sdcclCommRegister(comm, recvbuff, max_bytes, &recvHandle);
   } else {
-    devHandle->deviceMalloc(&sendbuff, max_bytes, flagcxMemDevice, NULL);
-    devHandle->deviceMalloc(&recvbuff, max_bytes, flagcxMemDevice, NULL);
+    devHandle->deviceMalloc(&sendbuff, max_bytes, sdcclMemDevice, NULL);
+    devHandle->deviceMalloc(&recvbuff, max_bytes, sdcclMemDevice, NULL);
   }
   hello = malloc(max_bytes);
   memset(hello, 0, max_bytes);
 
   // Warm-up for large size
   for (int i = 0; i < num_warmup_iters; i++) {
-    flagcxGroupStart(comm);
-    flagcxSend(sendbuff, max_bytes / sizeof(float), DATATYPE, sendPeer, comm,
+    sdcclGroupStart(comm);
+    sdcclSend(sendbuff, max_bytes / sizeof(float), DATATYPE, sendPeer, comm,
                stream);
-    flagcxRecv(recvbuff, max_bytes / sizeof(float), DATATYPE, recvPeer, comm,
+    sdcclRecv(recvbuff, max_bytes / sizeof(float), DATATYPE, recvPeer, comm,
                stream);
-    flagcxGroupEnd(comm);
+    sdcclGroupEnd(comm);
   }
   devHandle->streamSynchronize(stream);
 
   // Warm-up for small size
   for (int i = 0; i < num_warmup_iters; i++) {
-    flagcxGroupStart(comm);
-    flagcxSend(sendbuff, min_bytes / sizeof(float), DATATYPE, sendPeer, comm,
+    sdcclGroupStart(comm);
+    sdcclSend(sendbuff, min_bytes / sizeof(float), DATATYPE, sendPeer, comm,
                stream);
-    flagcxRecv(recvbuff, min_bytes / sizeof(float), DATATYPE, recvPeer, comm,
+    sdcclRecv(recvbuff, min_bytes / sizeof(float), DATATYPE, recvPeer, comm,
                stream);
-    flagcxGroupEnd(comm);
+    sdcclGroupEnd(comm);
   }
   devHandle->streamSynchronize(stream);
 
@@ -96,7 +96,7 @@ int main(int argc, char *argv[]) {
     strcpy((char *)hello + size / 3, "_0x5678");
     strcpy((char *)hello + size / 3 * 2, "_0x9abc");
 
-    devHandle->deviceMemcpy(sendbuff, hello, size, flagcxMemcpyHostToDevice,
+    devHandle->deviceMemcpy(sendbuff, hello, size, sdcclMemcpyHostToDevice,
                             NULL);
 
     if (proc == 0 && color == 0 && print_buffer) {
@@ -110,10 +110,10 @@ int main(int argc, char *argv[]) {
 
     tim.reset();
     for (int i = 0; i < num_iters; i++) {
-      flagcxGroupStart(comm);
-      flagcxSend(sendbuff, count, DATATYPE, sendPeer, comm, stream);
-      flagcxRecv(recvbuff, count, DATATYPE, recvPeer, comm, stream);
-      flagcxGroupEnd(comm);
+      sdcclGroupStart(comm);
+      sdcclSend(sendbuff, count, DATATYPE, sendPeer, comm, stream);
+      sdcclRecv(recvbuff, count, DATATYPE, recvPeer, comm, stream);
+      sdcclGroupEnd(comm);
     }
     devHandle->streamSynchronize(stream);
 
@@ -135,7 +135,7 @@ int main(int argc, char *argv[]) {
     MPI_Barrier(MPI_COMM_WORLD);
 
     memset(hello, 0, size);
-    devHandle->deviceMemcpy(hello, recvbuff, size, flagcxMemcpyDeviceToHost,
+    devHandle->deviceMemcpy(hello, recvbuff, size, sdcclMemcpyDeviceToHost,
                             NULL);
     if (proc == 0 && color == 0 && print_buffer) {
       printf("recvbuff = ");
@@ -147,19 +147,19 @@ int main(int argc, char *argv[]) {
 
   if (local_register) {
     // deregister buffer
-    flagcxCommDeregister(comm, sendHandle);
-    flagcxCommDeregister(comm, recvHandle);
+    sdcclCommDeregister(comm, sendHandle);
+    sdcclCommDeregister(comm, recvHandle);
     // deallocate buffer
-    flagcxMemFree(sendbuff);
-    flagcxMemFree(recvbuff);
+    sdcclMemFree(sendbuff);
+    sdcclMemFree(recvbuff);
   } else {
-    devHandle->deviceFree(sendbuff, flagcxMemDevice, NULL);
-    devHandle->deviceFree(recvbuff, flagcxMemDevice, NULL);
+    devHandle->deviceFree(sendbuff, sdcclMemDevice, NULL);
+    devHandle->deviceFree(recvbuff, sdcclMemDevice, NULL);
   }
   free(hello);
   devHandle->streamDestroy(stream);
-  flagcxCommDestroy(comm);
-  flagcxHandleFree(handler);
+  sdcclCommDestroy(comm);
+  sdcclHandleFree(handler);
 
   MPI_Finalize();
   return 0;

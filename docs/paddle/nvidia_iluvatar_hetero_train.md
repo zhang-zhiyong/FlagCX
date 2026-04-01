@@ -1,6 +1,6 @@
 # Guide for Training on Nvidia And Iluvatar GPUs
 ## Environment Setup
-Please refer to [nvidia_setup_guide](nvidia.md) and [iluvatar_setup_guide](iluvatar.md) for environment setup and compiling Paddle with FlagCX on Nvidia and Iluvatar machines.
+Please refer to [nvidia_setup_guide](nvidia.md) and [iluvatar_setup_guide](iluvatar.md) for environment setup and compiling Paddle with SDCCL on Nvidia and Iluvatar machines.
 ## Training on Heterogeneous AI accelerators (Nvidia GPU + Iluvatar GPU)
 We now support training ERNIE4.5 using Nvidia GPUs and Iluvatar GPUs together. Please refer to the following steps to get started
 1. Get ERNIE-4.5-Lite model from huggingface   
@@ -43,11 +43,11 @@ We now support training ERNIE4.5 using Nvidia GPUs and Iluvatar GPUs together. P
     export FLAGS_set_to_1d=False
     export NVIDIA_TF32_OVERRIDE=0
     export FLAGS_dataloader_use_file_descriptor=False
-    export FLAGCX_SOCKET_IFNAME=ens22f0,ens11f0np0
-    export FLAGCX_IB_HCA=mlx5
-    export FLAGCX_DEBUG=TRACE
-    export FLAGCX_DEBUG_SUBSYS=ALL
-    #export FLAGCX_C2C_ALGO="RING_PIPELINED"
+    export SDCCL_SOCKET_IFNAME=ens22f0,ens11f0np0
+    export SDCCL_IB_HCA=mlx5
+    export SDCCL_DEBUG=TRACE
+    export SDCCL_DEBUG_SUBSYS=ALL
+    #export SDCCL_C2C_ALGO="RING_PIPELINED"
     #export GLOG_v=4
     #export FLAGS_call_stack_level=3
     #export LD_PRELOAD=/usr/local/corex-4.3.0/lib64/libcuda.so.1

@@ -1,199 +1,199 @@
 /*************************************************************************
  * Copyright (c) 2025 BAAI. All rights reserved.
  *
- * Example CCL adaptor plugin for FlagCX.
- * This is a minimal skeleton: all operations return flagcxInternalError,
+ * Example CCL adaptor plugin for SDCCL.
+ * This is a minimal skeleton: all operations return sdcclInternalError,
  * so this plugin is only useful for verifying that the loading mechanism
  * works. A real plugin would wrap a CCL library (e.g. NCCL, RCCL).
  ************************************************************************/
 
-#include "flagcx/flagcx_ccl_adaptor.h"
-#include "flagcx/nvidia_adaptor.h"
+#include "sdccl/sdccl_ccl_adaptor.h"
+#include "sdccl/nvidia_adaptor.h"
 
-static flagcxResult_t pluginGetVersion(int *version) {
-  return flagcxInternalError;
+static sdcclResult_t pluginGetVersion(int *version) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginGetUniqueId(flagcxUniqueId_t *uniqueId) {
-  return flagcxInternalError;
+static sdcclResult_t pluginGetUniqueId(sdcclUniqueId_t *uniqueId) {
+  return sdcclInternalError;
 }
 
-static const char *pluginGetErrorString(flagcxResult_t result) {
+static const char *pluginGetErrorString(sdcclResult_t result) {
   return "Example CCL plugin: not implemented";
 }
 
-static const char *pluginGetLastError(flagcxInnerComm_t comm) {
+static const char *pluginGetLastError(sdcclInnerComm_t comm) {
   return "Example CCL plugin: not implemented";
 }
 
-static flagcxResult_t pluginGetStagedBuffer(const flagcxInnerComm_t comm,
+static sdcclResult_t pluginGetStagedBuffer(const sdcclInnerComm_t comm,
                                             void **buff, size_t size,
                                             int isRecv) {
-  return flagcxInternalError;
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginCommInitRank(flagcxInnerComm_t *comm, int nranks,
-                                         flagcxUniqueId *commId, int rank,
+static sdcclResult_t pluginCommInitRank(sdcclInnerComm_t *comm, int nranks,
+                                         sdcclUniqueId *commId, int rank,
                                          struct bootstrapState *bootstrap) {
-  return flagcxInternalError;
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginCommFinalize(flagcxInnerComm_t comm) {
-  return flagcxInternalError;
+static sdcclResult_t pluginCommFinalize(sdcclInnerComm_t comm) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginCommDestroy(flagcxInnerComm_t comm) {
-  return flagcxInternalError;
+static sdcclResult_t pluginCommDestroy(sdcclInnerComm_t comm) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginCommAbort(flagcxInnerComm_t comm) {
-  return flagcxInternalError;
+static sdcclResult_t pluginCommAbort(sdcclInnerComm_t comm) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginCommResume(flagcxInnerComm_t comm) {
-  return flagcxInternalError;
+static sdcclResult_t pluginCommResume(sdcclInnerComm_t comm) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginCommSuspend(flagcxInnerComm_t comm) {
-  return flagcxInternalError;
+static sdcclResult_t pluginCommSuspend(sdcclInnerComm_t comm) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginCommCount(const flagcxInnerComm_t comm,
+static sdcclResult_t pluginCommCount(const sdcclInnerComm_t comm,
                                       int *count) {
-  return flagcxInternalError;
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginCommGetDeviceNumber(const flagcxInnerComm_t comm,
+static sdcclResult_t pluginCommGetDeviceNumber(const sdcclInnerComm_t comm,
                                                 int *device) {
-  return flagcxInternalError;
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginCommUserRank(const flagcxInnerComm_t comm,
+static sdcclResult_t pluginCommUserRank(const sdcclInnerComm_t comm,
                                          int *rank) {
-  return flagcxInternalError;
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginCommGetAsyncError(flagcxInnerComm_t comm,
-                                              flagcxResult_t *asyncError) {
-  return flagcxInternalError;
+static sdcclResult_t pluginCommGetAsyncError(sdcclInnerComm_t comm,
+                                              sdcclResult_t *asyncError) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginMemAlloc(void **ptr, size_t size) {
-  return flagcxInternalError;
+static sdcclResult_t pluginMemAlloc(void **ptr, size_t size) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginMemFree(void *ptr) { return flagcxInternalError; }
+static sdcclResult_t pluginMemFree(void *ptr) { return sdcclInternalError; }
 
-static flagcxResult_t pluginCommRegister(const flagcxInnerComm_t comm,
+static sdcclResult_t pluginCommRegister(const sdcclInnerComm_t comm,
                                          void *buff, size_t size,
                                          void **handle) {
-  return flagcxInternalError;
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginCommDeregister(const flagcxInnerComm_t comm,
+static sdcclResult_t pluginCommDeregister(const sdcclInnerComm_t comm,
                                            void *handle) {
-  return flagcxInternalError;
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginCommWindowRegister(flagcxInnerComm_t comm,
+static sdcclResult_t pluginCommWindowRegister(sdcclInnerComm_t comm,
                                                void *buff, size_t size,
-                                               flagcxWindow_t *win,
+                                               sdcclWindow_t *win,
                                                int winFlags) {
-  return flagcxInternalError;
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginCommWindowDeregister(flagcxInnerComm_t comm,
-                                                 flagcxWindow_t win) {
-  return flagcxInternalError;
+static sdcclResult_t pluginCommWindowDeregister(sdcclInnerComm_t comm,
+                                                 sdcclWindow_t win) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginReduce(const void *sendbuff, void *recvbuff,
-                                   size_t count, flagcxDataType_t datatype,
-                                   flagcxRedOp_t op, int root,
-                                   flagcxInnerComm_t comm,
-                                   flagcxStream_t stream) {
-  return flagcxInternalError;
+static sdcclResult_t pluginReduce(const void *sendbuff, void *recvbuff,
+                                   size_t count, sdcclDataType_t datatype,
+                                   sdcclRedOp_t op, int root,
+                                   sdcclInnerComm_t comm,
+                                   sdcclStream_t stream) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginGather(const void *sendbuff, void *recvbuff,
-                                   size_t count, flagcxDataType_t datatype,
-                                   int root, flagcxInnerComm_t comm,
-                                   flagcxStream_t stream) {
-  return flagcxInternalError;
+static sdcclResult_t pluginGather(const void *sendbuff, void *recvbuff,
+                                   size_t count, sdcclDataType_t datatype,
+                                   int root, sdcclInnerComm_t comm,
+                                   sdcclStream_t stream) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginScatter(const void *sendbuff, void *recvbuff,
-                                    size_t count, flagcxDataType_t datatype,
-                                    int root, flagcxInnerComm_t comm,
-                                    flagcxStream_t stream) {
-  return flagcxInternalError;
+static sdcclResult_t pluginScatter(const void *sendbuff, void *recvbuff,
+                                    size_t count, sdcclDataType_t datatype,
+                                    int root, sdcclInnerComm_t comm,
+                                    sdcclStream_t stream) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginBroadcast(const void *sendbuff, void *recvbuff,
-                                      size_t count, flagcxDataType_t datatype,
-                                      int root, flagcxInnerComm_t comm,
-                                      flagcxStream_t stream) {
-  return flagcxInternalError;
+static sdcclResult_t pluginBroadcast(const void *sendbuff, void *recvbuff,
+                                      size_t count, sdcclDataType_t datatype,
+                                      int root, sdcclInnerComm_t comm,
+                                      sdcclStream_t stream) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginAllReduce(const void *sendbuff, void *recvbuff,
-                                      size_t count, flagcxDataType_t datatype,
-                                      flagcxRedOp_t op, flagcxInnerComm_t comm,
-                                      flagcxStream_t stream) {
-  return flagcxInternalError;
+static sdcclResult_t pluginAllReduce(const void *sendbuff, void *recvbuff,
+                                      size_t count, sdcclDataType_t datatype,
+                                      sdcclRedOp_t op, sdcclInnerComm_t comm,
+                                      sdcclStream_t stream) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t
+static sdcclResult_t
 pluginReduceScatter(const void *sendbuff, void *recvbuff, size_t recvcount,
-                    flagcxDataType_t datatype, flagcxRedOp_t op,
-                    flagcxInnerComm_t comm, flagcxStream_t stream) {
-  return flagcxInternalError;
+                    sdcclDataType_t datatype, sdcclRedOp_t op,
+                    sdcclInnerComm_t comm, sdcclStream_t stream) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginAllGather(const void *sendbuff, void *recvbuff,
+static sdcclResult_t pluginAllGather(const void *sendbuff, void *recvbuff,
                                       size_t sendcount,
-                                      flagcxDataType_t datatype,
-                                      flagcxInnerComm_t comm,
-                                      flagcxStream_t stream) {
-  return flagcxInternalError;
+                                      sdcclDataType_t datatype,
+                                      sdcclInnerComm_t comm,
+                                      sdcclStream_t stream) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginAlltoAll(const void *sendbuff, void *recvbuff,
-                                     size_t count, flagcxDataType_t datatype,
-                                     flagcxInnerComm_t comm,
-                                     flagcxStream_t stream) {
-  return flagcxInternalError;
+static sdcclResult_t pluginAlltoAll(const void *sendbuff, void *recvbuff,
+                                     size_t count, sdcclDataType_t datatype,
+                                     sdcclInnerComm_t comm,
+                                     sdcclStream_t stream) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginAlltoAllv(const void *sendbuff, size_t *sendcounts,
+static sdcclResult_t pluginAlltoAllv(const void *sendbuff, size_t *sendcounts,
                                       size_t *sdispls, void *recvbuff,
                                       size_t *recvcounts, size_t *rdispls,
-                                      flagcxDataType_t datatype,
-                                      flagcxInnerComm_t comm,
-                                      flagcxStream_t stream) {
-  return flagcxInternalError;
+                                      sdcclDataType_t datatype,
+                                      sdcclInnerComm_t comm,
+                                      sdcclStream_t stream) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginSend(const void *sendbuff, size_t count,
-                                 flagcxDataType_t datatype, int peer,
-                                 flagcxInnerComm_t comm,
-                                 flagcxStream_t stream) {
-  return flagcxInternalError;
+static sdcclResult_t pluginSend(const void *sendbuff, size_t count,
+                                 sdcclDataType_t datatype, int peer,
+                                 sdcclInnerComm_t comm,
+                                 sdcclStream_t stream) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginRecv(void *recvbuff, size_t count,
-                                 flagcxDataType_t datatype, int peer,
-                                 flagcxInnerComm_t comm,
-                                 flagcxStream_t stream) {
-  return flagcxInternalError;
+static sdcclResult_t pluginRecv(void *recvbuff, size_t count,
+                                 sdcclDataType_t datatype, int peer,
+                                 sdcclInnerComm_t comm,
+                                 sdcclStream_t stream) {
+  return sdcclInternalError;
 }
 
-static flagcxResult_t pluginGroupStart() { return flagcxInternalError; }
+static sdcclResult_t pluginGroupStart() { return sdcclInternalError; }
 
-static flagcxResult_t pluginGroupEnd() { return flagcxInternalError; }
+static sdcclResult_t pluginGroupEnd() { return sdcclInternalError; }
 
-__attribute__((visibility("default"))) struct flagcxCCLAdaptor_v1
-    FLAGCX_CCL_ADAPTOR_PLUGIN_SYMBOL_V1 = {
+__attribute__((visibility("default"))) struct sdcclCCLAdaptor_v1
+    SDCCL_CCL_ADAPTOR_PLUGIN_SYMBOL_V1 = {
         "Example",
         pluginGetVersion,
         pluginGetUniqueId,

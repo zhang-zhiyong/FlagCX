@@ -1,10 +1,10 @@
-# FlagCX CCL Adaptor Plugin Documentation
+# SDCCL CCL Adaptor Plugin Documentation
 
-This page describes the FlagCX CCL Adaptor plugin API and how to implement a device-side CCL plugin for FlagCX.
+This page describes the SDCCL CCL Adaptor plugin API and how to implement a device-side CCL plugin for SDCCL.
 
 ## Overview
 
-FlagCX supports external CCL (Collective Communication Library) plugins to allow custom device-side collective implementations without modifying the FlagCX source tree. Plugins implement the FlagCX CCL adaptor API as a shared library (`.so`), which FlagCX loads at runtime via `dlopen`.
+SDCCL supports external CCL (Collective Communication Library) plugins to allow custom device-side collective implementations without modifying the SDCCL source tree. Plugins implement the SDCCL CCL adaptor API as a shared library (`.so`), which SDCCL loads at runtime via `dlopen`.
 
 When a plugin is loaded, it replaces the built-in device-side CCL adaptor (index 1 in the `cclAdaptors` array). The host-side adaptor (bootstrap/gloo/MPI at index 0) is never affected by the plugin.
 
@@ -12,34 +12,34 @@ When a plugin is loaded, it replaces the built-in device-side CCL adaptor (index
 
 ### Loading
 
-FlagCX looks for a plugin when the `FLAGCX_CCL_ADAPTOR_PLUGIN` environment variable is set. The value can be:
+SDCCL looks for a plugin when the `SDCCL_CCL_ADAPTOR_PLUGIN` environment variable is set. The value can be:
 
-- An absolute or relative path to a `.so` file (e.g. `./libflagcx-ccl-myplugin.so`)
+- An absolute or relative path to a `.so` file (e.g. `./libsdccl-ccl-myplugin.so`)
 - `none` to explicitly disable plugin loading
 
 If the variable is unset, no plugin is loaded and the built-in adaptor is used.
 
 ### Symbol Versioning
 
-Once the library is loaded, FlagCX looks for a symbol named `flagcxCCLAdaptorPlugin_v1`. This versioned naming allows future API changes while maintaining backwards compatibility.
+Once the library is loaded, SDCCL looks for a symbol named `sdcclCCLAdaptorPlugin_v1`. This versioned naming allows future API changes while maintaining backwards compatibility.
 
-The symbol must be a `struct flagcxCCLAdaptor_v1` instance with `visibility("default")` so that `dlsym` can find it.
+The symbol must be a `struct sdcclCCLAdaptor_v1` instance with `visibility("default")` so that `dlsym` can find it.
 
 ### Lifecycle
 
-The CCL adaptor plugin is initialized during `flagcxCommInitRank()` (before any device-side CCL calls) and finalized during `flagcxCommDestroy()` (after all device-side communicators are destroyed). A reference count ensures the plugin stays loaded when multiple communicators exist.
+The CCL adaptor plugin is initialized during `sdcclCommInitRank()` (before any device-side CCL calls) and finalized during `sdcclCommDestroy()` (after all device-side communicators are destroyed). A reference count ensures the plugin stays loaded when multiple communicators exist.
 
 ## Building a Plugin
 
 ### Headers
 
-Plugins should copy the required FlagCX headers into their own source tree to avoid build-time dependency on the full FlagCX source. The example plugin demonstrates this pattern with a local `flagcx/` directory containing:
+Plugins should copy the required SDCCL headers into their own source tree to avoid build-time dependency on the full SDCCL source. The example plugin demonstrates this pattern with a local `sdccl/` directory containing:
 
-- `flagcx.h` — Core types and error codes
-- `flagcx_ccl_adaptor.h` — The `flagcxCCLAdaptor_v1` struct and plugin symbol macro
-- **Platform adaptor header** — Copy the vendor adaptor header corresponding to your target platform from `flagcx/adaptor/include/`. For example, `nvidia_adaptor.h` for NVIDIA/NCCL. This header provides struct definitions for `flagcxInnerComm`, `flagcxStream`, `flagcxEvent`, `flagcxIpcMemHandle`, `flagcxWindow`, etc.
+- `sdccl.h` — Core types and error codes
+- `sdccl_ccl_adaptor.h` — The `sdcclCCLAdaptor_v1` struct and plugin symbol macro
+- **Platform adaptor header** — Copy the vendor adaptor header corresponding to your target platform from `sdccl/adaptor/include/`. For example, `nvidia_adaptor.h` for NVIDIA/NCCL. This header provides struct definitions for `sdcclInnerComm`, `sdcclStream`, `sdcclEvent`, `sdcclIpcMemHandle`, `sdcclWindow`, etc.
 
-When copying the vendor adaptor header, **remove the `#ifdef USE_XXX_ADAPTOR` / `#endif` guard**. Since your plugin targets a specific platform, the platform choice is implicit — adding the guard would require an unnecessary `-DUSE_XXX_ADAPTOR` flag in your Makefile. See `example/flagcx/nvidia_adaptor.h` and `nccl/flagcx/nvidia_adaptor.h` for reference.
+When copying the vendor adaptor header, **remove the `#ifdef USE_XXX_ADAPTOR` / `#endif` guard**. Since your plugin targets a specific platform, the platform choice is implicit — adding the guard would require an unnecessary `-DUSE_XXX_ADAPTOR` flag in your Makefile. See `example/sdccl/nvidia_adaptor.h` and `nccl/sdccl/nvidia_adaptor.h` for reference.
 
 ### Compilation
 
@@ -47,7 +47,7 @@ Plugins must be compiled as shared libraries with `-fPIC`. Using `-fvisibility=h
 
 ```c
 __attribute__((visibility("default")))
-struct flagcxCCLAdaptor_v1 FLAGCX_CCL_ADAPTOR_PLUGIN_SYMBOL_V1 = {
+struct sdcclCCLAdaptor_v1 SDCCL_CCL_ADAPTOR_PLUGIN_SYMBOL_V1 = {
     "MyPlugin",
     myGetVersion, myGetUniqueId, myGetErrorString,
     ...
@@ -57,108 +57,108 @@ struct flagcxCCLAdaptor_v1 FLAGCX_CCL_ADAPTOR_PLUGIN_SYMBOL_V1 = {
 A minimal Makefile:
 
 ```makefile
-build: libflagcx-ccl-myplugin.so
+build: libsdccl-ccl-myplugin.so
 
-libflagcx-ccl-myplugin.so: plugin.cc
-	g++ -Iflagcx -fPIC -shared -o $@ $^
+libsdccl-ccl-myplugin.so: plugin.cc
+	g++ -Isdccl -fPIC -shared -o $@ $^
 
 clean:
-	rm -f libflagcx-ccl-myplugin.so
+	rm -f libsdccl-ccl-myplugin.so
 ```
 
 ## API (v1)
 
-Below is the `flagcxCCLAdaptor_v1` struct with all 35 members (1 name + 34 function pointers).
+Below is the `sdcclCCLAdaptor_v1` struct with all 35 members (1 name + 34 function pointers).
 
 ```c
-struct flagcxCCLAdaptor_v1 {
+struct sdcclCCLAdaptor_v1 {
   const char *name;
 
   // Basic functions
-  flagcxResult_t (*getVersion)(int *version);
-  flagcxResult_t (*getUniqueId)(flagcxUniqueId_t *uniqueId);
-  const char *(*getErrorString)(flagcxResult_t result);
-  const char *(*getLastError)(flagcxInnerComm_t comm);
-  flagcxResult_t (*getStagedBuffer)(const flagcxInnerComm_t comm, void **buff,
+  sdcclResult_t (*getVersion)(int *version);
+  sdcclResult_t (*getUniqueId)(sdcclUniqueId_t *uniqueId);
+  const char *(*getErrorString)(sdcclResult_t result);
+  const char *(*getLastError)(sdcclInnerComm_t comm);
+  sdcclResult_t (*getStagedBuffer)(const sdcclInnerComm_t comm, void **buff,
                                     size_t size, int isRecv);
 
   // Communicator functions
-  flagcxResult_t (*commInitRank)(flagcxInnerComm_t *comm, int nranks,
-                                 flagcxUniqueId *commId, int rank,
+  sdcclResult_t (*commInitRank)(sdcclInnerComm_t *comm, int nranks,
+                                 sdcclUniqueId *commId, int rank,
                                  bootstrapState *bootstrap);
-  flagcxResult_t (*commFinalize)(flagcxInnerComm_t comm);
-  flagcxResult_t (*commDestroy)(flagcxInnerComm_t comm);
-  flagcxResult_t (*commAbort)(flagcxInnerComm_t comm);
-  flagcxResult_t (*commResume)(flagcxInnerComm_t comm);
-  flagcxResult_t (*commSuspend)(flagcxInnerComm_t comm);
-  flagcxResult_t (*commCount)(const flagcxInnerComm_t comm, int *count);
-  flagcxResult_t (*commGetDeviceNumber)(const flagcxInnerComm_t comm,
+  sdcclResult_t (*commFinalize)(sdcclInnerComm_t comm);
+  sdcclResult_t (*commDestroy)(sdcclInnerComm_t comm);
+  sdcclResult_t (*commAbort)(sdcclInnerComm_t comm);
+  sdcclResult_t (*commResume)(sdcclInnerComm_t comm);
+  sdcclResult_t (*commSuspend)(sdcclInnerComm_t comm);
+  sdcclResult_t (*commCount)(const sdcclInnerComm_t comm, int *count);
+  sdcclResult_t (*commGetDeviceNumber)(const sdcclInnerComm_t comm,
                                         int *device);
-  flagcxResult_t (*commUserRank)(const flagcxInnerComm_t comm, int *rank);
-  flagcxResult_t (*commGetAsyncError)(flagcxInnerComm_t comm,
-                                      flagcxResult_t *asyncError);
-  flagcxResult_t (*memAlloc)(void **ptr, size_t size);
-  flagcxResult_t (*memFree)(void *ptr);
-  flagcxResult_t (*commRegister)(const flagcxInnerComm_t comm, void *buff,
+  sdcclResult_t (*commUserRank)(const sdcclInnerComm_t comm, int *rank);
+  sdcclResult_t (*commGetAsyncError)(sdcclInnerComm_t comm,
+                                      sdcclResult_t *asyncError);
+  sdcclResult_t (*memAlloc)(void **ptr, size_t size);
+  sdcclResult_t (*memFree)(void *ptr);
+  sdcclResult_t (*commRegister)(const sdcclInnerComm_t comm, void *buff,
                                  size_t size, void **handle);
-  flagcxResult_t (*commDeregister)(const flagcxInnerComm_t comm, void *handle);
+  sdcclResult_t (*commDeregister)(const sdcclInnerComm_t comm, void *handle);
 
   // Symmetric functions
-  flagcxResult_t (*commWindowRegister)(flagcxInnerComm_t comm, void *buff,
-                                       size_t size, flagcxWindow_t *win,
+  sdcclResult_t (*commWindowRegister)(sdcclInnerComm_t comm, void *buff,
+                                       size_t size, sdcclWindow_t *win,
                                        int winFlags);
-  flagcxResult_t (*commWindowDeregister)(flagcxInnerComm_t comm,
-                                         flagcxWindow_t win);
+  sdcclResult_t (*commWindowDeregister)(sdcclInnerComm_t comm,
+                                         sdcclWindow_t win);
 
   // Communication functions
-  flagcxResult_t (*reduce)(const void *sendbuff, void *recvbuff, size_t count,
-                           flagcxDataType_t datatype, flagcxRedOp_t op,
-                           int root, flagcxInnerComm_t comm,
-                           flagcxStream_t stream);
-  flagcxResult_t (*gather)(const void *sendbuff, void *recvbuff, size_t count,
-                           flagcxDataType_t datatype, int root,
-                           flagcxInnerComm_t comm, flagcxStream_t stream);
-  flagcxResult_t (*scatter)(const void *sendbuff, void *recvbuff, size_t count,
-                            flagcxDataType_t datatype, int root,
-                            flagcxInnerComm_t comm, flagcxStream_t stream);
-  flagcxResult_t (*broadcast)(const void *sendbuff, void *recvbuff,
-                              size_t count, flagcxDataType_t datatype, int root,
-                              flagcxInnerComm_t comm, flagcxStream_t stream);
-  flagcxResult_t (*allReduce)(const void *sendbuff, void *recvbuff,
-                              size_t count, flagcxDataType_t datatype,
-                              flagcxRedOp_t op, flagcxInnerComm_t comm,
-                              flagcxStream_t stream);
-  flagcxResult_t (*reduceScatter)(const void *sendbuff, void *recvbuff,
-                                  size_t recvcount, flagcxDataType_t datatype,
-                                  flagcxRedOp_t op, flagcxInnerComm_t comm,
-                                  flagcxStream_t stream);
-  flagcxResult_t (*allGather)(const void *sendbuff, void *recvbuff,
-                              size_t sendcount, flagcxDataType_t datatype,
-                              flagcxInnerComm_t comm, flagcxStream_t stream);
-  flagcxResult_t (*alltoAll)(const void *sendbuff, void *recvbuff, size_t count,
-                             flagcxDataType_t datatype, flagcxInnerComm_t comm,
-                             flagcxStream_t stream);
-  flagcxResult_t (*alltoAllv)(const void *sendbuff, size_t *sendcounts,
+  sdcclResult_t (*reduce)(const void *sendbuff, void *recvbuff, size_t count,
+                           sdcclDataType_t datatype, sdcclRedOp_t op,
+                           int root, sdcclInnerComm_t comm,
+                           sdcclStream_t stream);
+  sdcclResult_t (*gather)(const void *sendbuff, void *recvbuff, size_t count,
+                           sdcclDataType_t datatype, int root,
+                           sdcclInnerComm_t comm, sdcclStream_t stream);
+  sdcclResult_t (*scatter)(const void *sendbuff, void *recvbuff, size_t count,
+                            sdcclDataType_t datatype, int root,
+                            sdcclInnerComm_t comm, sdcclStream_t stream);
+  sdcclResult_t (*broadcast)(const void *sendbuff, void *recvbuff,
+                              size_t count, sdcclDataType_t datatype, int root,
+                              sdcclInnerComm_t comm, sdcclStream_t stream);
+  sdcclResult_t (*allReduce)(const void *sendbuff, void *recvbuff,
+                              size_t count, sdcclDataType_t datatype,
+                              sdcclRedOp_t op, sdcclInnerComm_t comm,
+                              sdcclStream_t stream);
+  sdcclResult_t (*reduceScatter)(const void *sendbuff, void *recvbuff,
+                                  size_t recvcount, sdcclDataType_t datatype,
+                                  sdcclRedOp_t op, sdcclInnerComm_t comm,
+                                  sdcclStream_t stream);
+  sdcclResult_t (*allGather)(const void *sendbuff, void *recvbuff,
+                              size_t sendcount, sdcclDataType_t datatype,
+                              sdcclInnerComm_t comm, sdcclStream_t stream);
+  sdcclResult_t (*alltoAll)(const void *sendbuff, void *recvbuff, size_t count,
+                             sdcclDataType_t datatype, sdcclInnerComm_t comm,
+                             sdcclStream_t stream);
+  sdcclResult_t (*alltoAllv)(const void *sendbuff, size_t *sendcounts,
                               size_t *sdispls, void *recvbuff,
                               size_t *recvcounts, size_t *rdispls,
-                              flagcxDataType_t datatype, flagcxInnerComm_t comm,
-                              flagcxStream_t stream);
-  flagcxResult_t (*send)(const void *sendbuff, size_t count,
-                         flagcxDataType_t datatype, int peer,
-                         flagcxInnerComm_t comm, flagcxStream_t stream);
-  flagcxResult_t (*recv)(void *recvbuff, size_t count,
-                         flagcxDataType_t datatype, int peer,
-                         flagcxInnerComm_t comm, flagcxStream_t stream);
+                              sdcclDataType_t datatype, sdcclInnerComm_t comm,
+                              sdcclStream_t stream);
+  sdcclResult_t (*send)(const void *sendbuff, size_t count,
+                         sdcclDataType_t datatype, int peer,
+                         sdcclInnerComm_t comm, sdcclStream_t stream);
+  sdcclResult_t (*recv)(void *recvbuff, size_t count,
+                         sdcclDataType_t datatype, int peer,
+                         sdcclInnerComm_t comm, sdcclStream_t stream);
 
   // Group semantics
-  flagcxResult_t (*groupStart)();
-  flagcxResult_t (*groupEnd)();
+  sdcclResult_t (*groupStart)();
+  sdcclResult_t (*groupEnd)();
 };
 ```
 
 ### Validation
 
-When loading a plugin, FlagCX validates that all 34 function pointers (and `name`) are non-NULL:
+When loading a plugin, SDCCL validates that all 34 function pointers (and `name`) are non-NULL:
 - `name`
 - `getVersion`, `getUniqueId`, `getErrorString`, `getLastError`, `getStagedBuffer`
 - `commInitRank`, `commFinalize`, `commDestroy`, `commAbort`, `commResume`, `commSuspend`
@@ -169,19 +169,19 @@ When loading a plugin, FlagCX validates that all 34 function pointers (and `name
 - `alltoAll`, `alltoAllv`, `send`, `recv`
 - `groupStart`, `groupEnd`
 
-If any field is NULL, the plugin is not loaded and FlagCX falls back to the built-in adaptor. Functions that your platform does not support should be implemented as stubs returning `flagcxInternalError` or `flagcxNotSupported`.
+If any field is NULL, the plugin is not loaded and SDCCL falls back to the built-in adaptor. Functions that your platform does not support should be implemented as stubs returning `sdcclInternalError` or `sdcclNotSupported`.
 
 ### Error Codes
 
-All plugin functions return `flagcxResult_t`. Return `flagcxSuccess` on success.
+All plugin functions return `sdcclResult_t`. Return `sdcclSuccess` on success.
 
-- `flagcxSuccess` — Operation completed successfully.
-- `flagcxSystemError` — A system or hardware call failed.
-- `flagcxInternalError` — An internal logic error or unsupported operation.
+- `sdcclSuccess` — Operation completed successfully.
+- `sdcclSystemError` — A system or hardware call failed.
+- `sdcclInternalError` — An internal logic error or unsupported operation.
 
 ## Example
 
-The `example/` directory contains a minimal skeleton plugin where all operations return `flagcxInternalError`. It demonstrates the required file structure, headers, and export symbol.
+The `example/` directory contains a minimal skeleton plugin where all operations return `sdcclInternalError`. It demonstrates the required file structure, headers, and export symbol.
 
 ### Build and Test
 
@@ -191,12 +191,12 @@ cd adaptor_plugin/ccl/example
 make
 
 # Run with the plugin (plugin loads but operations will fail)
-FLAGCX_CCL_ADAPTOR_PLUGIN=./adaptor_plugin/ccl/example/libflagcx-ccl-example.so \
-  FLAGCX_DEBUG=INFO <your_app>
+SDCCL_CCL_ADAPTOR_PLUGIN=./adaptor_plugin/ccl/example/libsdccl-ccl-example.so \
+  SDCCL_DEBUG=INFO <your_app>
 
 # Expect log output:
 #   ADAPTOR/Plugin: Loaded CCL adaptor plugin 'Example'
 
 # Disable plugin
-FLAGCX_CCL_ADAPTOR_PLUGIN=none <your_app>
+SDCCL_CCL_ADAPTOR_PLUGIN=none <your_app>
 ```

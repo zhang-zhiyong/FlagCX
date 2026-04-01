@@ -7,7 +7,7 @@ on:
   pull_request:
     branches: [ main ]
     paths:
-      - 'flagcx/**'
+      - 'sdccl/**'
       - 'packaging/debian/**'
       - '.github/workflows/build-deb.yml'
   workflow_dispatch:
@@ -31,11 +31,11 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build ${{ matrix.backend }} packages
-        run: ./packaging/debian/build-helpers/build-flagcx.sh ${{ matrix.backend }}
+        run: ./packaging/debian/build-helpers/build-sdccl.sh ${{ matrix.backend }}
 
       - name: Upload ${{ matrix.backend }} packages
         uses: actions/upload-artifact@v7
         with:
-          name: flagcx-${{ matrix.backend }}-packages
+          name: sdccl-${{ matrix.backend }}-packages
           path: debian-packages/${{ matrix.backend }}/*.deb
           retention-days: 1

@@ -25,8 +25,8 @@ ifeq ($(USE_NVIDIA), 1)
 	DEVICE_COMPILER = $(DEVICE_HOME)/bin/nvcc
 endif
 
-COMMON_INCLUDES = -I../../flagcx/include -I../../flagcx/adaptor/include -I../../flagcx/service/include -I../../flagcx/core/include -I../../third-party/json/single_include -I$(INCLUDEDIR) -I$(MPI_INCLUDE) -I$(DEVICE_INCLUDE)
-COMMON_LIBS = -L../../build/lib -L$(MPI_LIB) -L$(DEVICE_LIB) -lflagcx $(MPI_LINK) $(DEVICE_LINK)
+COMMON_INCLUDES = -I../../sdccl/include -I../../sdccl/adaptor/include -I../../sdccl/service/include -I../../sdccl/core/include -I../../third-party/json/single_include -I$(INCLUDEDIR) -I$(MPI_INCLUDE) -I$(DEVICE_INCLUDE)
+COMMON_LIBS = -L../../build/lib -L$(MPI_LIB) -L$(DEVICE_LIB) -lsdccl $(MPI_LINK) $(DEVICE_LINK)
 
 all: test-intranode test-internode-twosided test-internode-onesided test-device-api
 

@@ -11,10 +11,10 @@ else
     echo "NCCL debug information disabled."
 fi
 
-export FLAGCX_DEBUG=INFO
-export FLAGCX_DEBUG_SUBSYS=ALL
+export SDCCL_DEBUG=INFO
+export SDCCL_DEBUG_SUBSYS=ALL
 export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-# Need to preload customized gloo library specified for FlagCX linkage
+# Need to preload customized gloo library specified for SDCCL linkage
 # export LD_PRELOAD=/usr/local/lib/libgloo.so
 # export LD_PRELOAD=/usr/local/nccl/build/lib/libnccl.so
 export TORCH_DISTRIBUTED_DETAIL=DEBUG

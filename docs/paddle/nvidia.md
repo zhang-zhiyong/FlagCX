@@ -1,4 +1,4 @@
-# Guide For Using Paddle with FlagCX on Nvidia GPU environment
+# Guide For Using Paddle with SDCCL on Nvidia GPU environment
 ## Environment Setup
 1. prepare a docker container on Nvidia GPU environment
 2. start the docker container
@@ -9,7 +9,7 @@
     ```bash
     git clone https://github.com/PaddlePaddle/Paddle.git
     ```
-## Compile Paddle With FlagCX
+## Compile Paddle With SDCCL
 Please follow the following commands
 ```bash
 # checkout develop branch
@@ -19,7 +19,7 @@ mkdir build && cd build
 # install paddle dependencies
 pip install -r ../python/requirements.txt
 # run cmake 
-cmake .. -GNinja -DPY_VERSION=3.10 -DWITH_GPU=ON -DWITH_FLAGCX=ON -DWITH_DISTRIBUTE=ON -DCMAKE_BUILD_TYPE=Release
+cmake .. -GNinja -DPY_VERSION=3.10 -DWITH_GPU=ON -DWITH_SDCCL=ON -DWITH_DISTRIBUTE=ON -DCMAKE_BUILD_TYPE=Release
 
 # compile
 ninja -j$(nproc)
@@ -31,8 +31,8 @@ pip install -U [whl_package_name]
 python -c "import paddle;paddle.utils.run_check()"
 ```
 
-## Train Model using Paddle + FlagCX
-We now support training GPT3 on XPU environment using Paddle + FlagCX. Please refer to the following steps to get started
+## Train Model using Paddle + SDCCL
+We now support training GPT3 on XPU environment using Paddle + SDCCL. Please refer to the following steps to get started
 1. clone PaddleNLP
     ```bash
     git clone https://github.com/PaddlePaddle/PaddleNLP.git
@@ -55,16 +55,16 @@ We now support training GPT3 on XPU environment using Paddle + FlagCX. Please re
 4. prepare training script  
     please refer to the following script for training GPT3
     ```bash
-    # this is the script for training gpt3 on XPU machines using flagcx as communication backend
+    # this is the script for training gpt3 on XPU machines using sdccl as communication backend
     # define root path
     export root_path=/workspace
     export PYTHONPATH=$root_path/PaddleNLP:$PYTHONPATH
-    export PADDLE_DISTRI_BACKEND=flagcx
+    export PADDLE_DISTRI_BACKEND=sdccl
 
     # log
     export GLOG_v=0
-    export FLAGCX_DEBUG=INFO
-    export FLAGCX_DEBUG_SUBSYS=INIT
+    export SDCCL_DEBUG=INFO
+    export SDCCL_DEBUG_SUBSYS=INIT
     export XPU_FORCE_SHARED_DEVICE_CONTEXT=1
 
     current_date=$(date +"%m%d")

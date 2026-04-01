@@ -76,7 +76,7 @@ upload_backend() {
 
     if [ ! -d "$package_dir" ]; then
         log_warn "Package directory not found: $package_dir"
-        log_warn "Run build-flagcx.sh first to build packages"
+        log_warn "Run build-sdccl.sh first to build packages"
         return 1
     fi
 
@@ -131,5 +131,5 @@ esac
 echo ""
 log_info "Upload test complete!"
 echo ""
-echo "To use the repository, add to /etc/apt/sources.list.d/flagcx.list:"
+echo "To use the repository, add to /etc/apt/sources.list.d/sdccl.list:"
 echo "deb https://resource.flagos.net/repository/flagos-apt-hosted/ flagos-apt-hosted main"

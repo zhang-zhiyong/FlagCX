@@ -143,11 +143,11 @@ RUN cd ${STAGE_DIR} && \
         ~/miniconda3/bin/conda config --set default_python ${PYTHON_VERSION}
 
 ##############################################################################
-# Clone FlagCX and Build with USE_NVIDIA=1 and GTEST
+# Clone SDCCL and Build with USE_NVIDIA=1 and GTEST
 ##############################################################################
 RUN cd ${WORK_DIR} && \
-    git clone https://github.com/FlagOpen/FlagCX.git && \
-    cd FlagCX && \
+    git clone https://github.com/FlagOpen/SDCCL.git && \
+    cd SDCCL && \
     git checkout $FC_VERSION && \
     git submodule update --init --recursive && \
     make USE_NVIDIA=1

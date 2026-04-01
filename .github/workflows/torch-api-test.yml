@@ -38,13 +38,13 @@ jobs:
           apt update -y && apt-get install -y git rdma-core ibverbs-utils perftest infiniband-diags libibverbs-dev librdmacm-dev clang-format
           pip list | grep torch && which python
           pip install pre-commit -i https://pypi.tuna.tsinghua.edu.cn/simple
-          cd /__w/FlagCX/FlagCX
-          git config --global --add safe.directory /__w/FlagCX/FlagCX && git status
+          cd /__w/SDCCL/SDCCL
+          git config --global --add safe.directory /__w/SDCCL/SDCCL && git status
           pre-commit install
 
       - name: Run Code Format Check with pre-commit
         run: |
-          cd /__w/FlagCX/FlagCX
+          cd /__w/SDCCL/SDCCL
           git fetch --all
           if [ -n "$GITHUB_HEAD_REF" ] && [ -n "$GITHUB_BASE_REF" ]; then
             from_ref="origin/$GITHUB_HEAD_REF"
@@ -56,23 +56,23 @@ jobs:
 
       - name: Run `make` to build the project
         run: |
-          cd /__w/FlagCX/FlagCX
+          cd /__w/SDCCL/SDCCL
           export MPI_HOME=/usr/local/mpi
           make USE_NVIDIA=1 -j$(nproc)
 
-      - name: Install FlagCX PyTorch Plugin
+      - name: Install SDCCL PyTorch Plugin
         run: |
           export PATH=/root/miniconda3/bin:$PATH
           eval "$(/root/miniconda3/bin/conda shell.bash hook)" && conda activate flagscale-train && conda env list
           pip uninstall -y setuptools && pip install setuptools==77.0.1 -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple 
-          cd /__w/FlagCX/FlagCX/plugin/torch
+          cd /__w/SDCCL/SDCCL/plugin/torch
           python setup.py develop --adaptor nvidia
 
       - name: Run PyTorch API Tests
         run: |
           export PATH=/root/miniconda3/bin:$PATH
           eval "$(/root/miniconda3/bin/conda shell.bash hook)" && conda activate flagscale-train && conda env list
-          cd /__w/FlagCX/FlagCX/test/script/
-          export FLAGCX_DEBUG=TRACE
-          export FLAGCX_DEBUG_SUBSYS=ALL
+          cd /__w/SDCCL/SDCCL/test/script/
+          export SDCCL_DEBUG=TRACE
+          export SDCCL_DEBUG_SUBSYS=ALL
           bash torch_api_test.sh

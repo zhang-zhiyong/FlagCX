@@ -1,21 +1,21 @@
-# NCCL Wrapper for FlagCX
+# NCCL Wrapper for SDCCL
 
-This plugin builds a drop-in `libnccl.so` that intercepts NCCL API calls and routes them through FlagCX. Any application or framework that uses NCCL (e.g. PyTorch, DeepSpeed) can transparently use FlagCX without code changes.
+This plugin builds a drop-in `libnccl.so` that intercepts NCCL API calls and routes them through SDCCL. Any application or framework that uses NCCL (e.g. PyTorch, DeepSpeed) can transparently use SDCCL without code changes.
 
 ## How It Works
 
-The wrapper exports public NCCL symbols matching the version of the system-installed NCCL headers. When an application calls an NCCL function (e.g. `ncclAllReduce`), the wrapper translates the call into the equivalent FlagCX API.
+The wrapper exports public NCCL symbols matching the version of the system-installed NCCL headers. When an application calls an NCCL function (e.g. `ncclAllReduce`), the wrapper translates the call into the equivalent SDCCL API.
 
-Because FlagCX's internal NCCL adaptor itself calls back into `nccl*` functions, the wrapper uses a **thread-local recursive guard** to prevent infinite recursion. On the first call, the wrapper delegates to FlagCX. If FlagCX re-enters an `nccl*` symbol on the same thread, the wrapper forwards the call to the **real** NCCL library (loaded via `dlopen` at runtime).
+Because SDCCL's internal NCCL adaptor itself calls back into `nccl*` functions, the wrapper uses a **thread-local recursive guard** to prevent infinite recursion. On the first call, the wrapper delegates to SDCCL. If SDCCL re-enters an `nccl*` symbol on the same thread, the wrapper forwards the call to the **real** NCCL library (loaded via `dlopen` at runtime).
 
 ```
 Application
     |
     v
-ncclAllReduce()          <-- wrapper (first entry, delegates to FlagCX)
+ncclAllReduce()          <-- wrapper (first entry, delegates to SDCCL)
     |
     v
-FlagCX
+SDCCL
     |
     v
 ncclAllReduce()          <-- wrapper (re-entry detected, forwards to real NCCL)
@@ -26,7 +26,7 @@ Real NCCL
 
 ## Prerequisites
 
-- **FlagCX** built and installed (the wrapper links against `libflagcx.so`)
+- **SDCCL** built and installed (the wrapper links against `libsdccl.so`)
 - **CUDA toolkit** (for `cuda_runtime.h` and `libcudart`)
 - **Real NCCL >= 2.21.0** installed somewhere on the system (the wrapper loads it via `dlopen` at runtime). Supported NCCL versions: **2.21 through 2.27**. The wrapper uses compile-time version guards (`NCCL_VERSION_CODE`) to adapt to the installed NCCL version — APIs introduced after 2.21.0 are only built when the system headers support them.
 
@@ -41,7 +41,7 @@ make NCCL_HOME=/path/to/nccl CUDA_HOME=/path/to/cuda
 
 | Variable | Default | Description |
 |---|---|---|
-| `FLAGCX_HOME` | `../../` (auto-detected) | Path to the FlagCX source/build tree |
+| `SDCCL_HOME` | `../../` (auto-detected) | Path to the SDCCL source/build tree |
 | `CUDA_HOME` | `/usr/local/cuda` | Path to the CUDA toolkit |
 | `NCCL_HOME` | `/usr/local/nccl` | Path to the real NCCL installation |
 | `REAL_NCCL_LIB` | `$(NCCL_HOME)/lib/libnccl.so.2` | Full path to the real `libnccl.so.2` |
@@ -79,16 +79,16 @@ export LD_LIBRARY_PATH=/path/to/plugin/nccl/build/lib:$LD_LIBRARY_PATH
 python train.py
 ```
 
-Make sure the FlagCX library is also loadable at runtime (it is set via `rpath` during linking, but you may need to add it to `LD_LIBRARY_PATH` if you moved things around):
+Make sure the SDCCL library is also loadable at runtime (it is set via `rpath` during linking, but you may need to add it to `LD_LIBRARY_PATH` if you moved things around):
 
 ```bash
-export LD_LIBRARY_PATH=/path/to/flagcx/build/lib:/path/to/plugin/nccl/build/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/path/to/sdccl/build/lib:/path/to/plugin/nccl/build/lib:$LD_LIBRARY_PATH
 python train.py
 ```
 
 ## Supported APIs
 
-The following NCCL APIs are intercepted and routed through FlagCX:
+The following NCCL APIs are intercepted and routed through SDCCL:
 
 - **Version / Error**: `ncclGetVersion`, `ncclGetErrorString`, `ncclGetLastError`
 - **Unique ID**: `ncclGetUniqueId`
@@ -100,7 +100,7 @@ The following NCCL APIs are intercepted and routed through FlagCX:
 - **Point-to-Point**: `ncclSend`, `ncclRecv`
 - **Group**: `ncclGroupStart`, `ncclGroupEnd`
 
-The following APIs are exported but return `ncclInvalidUsage` (no FlagCX equivalent):
+The following APIs are exported but return `ncclInvalidUsage` (no SDCCL equivalent):
 
 `ncclBcast`, `ncclCommInitAll`, `ncclCommSplit`, `ncclRedOpCreatePreMulSum`, `ncclRedOpDestroy`
 

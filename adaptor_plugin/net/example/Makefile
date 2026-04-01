@@ -1,7 +1,7 @@
-build: libflagcx-net-example.so
+build: libsdccl-net-example.so
 
-libflagcx-net-example.so: plugin.cc
-	g++ -Iflagcx -fPIC -shared -o $@ $^
+libsdccl-net-example.so: plugin.cc
+	g++ -Isdccl -fPIC -shared -o $@ $^
 
 clean:
-	rm -f libflagcx-net-example.so
+	rm -f libsdccl-net-example.so

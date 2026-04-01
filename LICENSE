@@ -203,13 +203,13 @@
 
 
 ======================================================================================
-FlagCX subcomponents:
+SDCCL subcomponents:
 
-The FlagCX project contains separate copyright notices and license terms. Your use of the
+The SDCCL project contains separate copyright notices and license terms. Your use of the
 source code for these subcomponents is subject to the terms and conditions of the
 following licenses.
 
-* NCCL files under flagcx/service folder are provided under NCCL license.
-  See flagcx/service/LICENSE-NCCL.txt
-* NCCL files under flagcx/core folder are provided under NCCL license.
-  See flagcx/core/LICENSE-NCCL.txt
+* NCCL files under sdccl/service folder are provided under NCCL license.
+  See sdccl/service/LICENSE-NCCL.txt
+* NCCL files under sdccl/core folder are provided under NCCL license.
+  See sdccl/core/LICENSE-NCCL.txt

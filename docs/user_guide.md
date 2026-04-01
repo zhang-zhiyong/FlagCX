@@ -4,9 +4,9 @@ Refer to the environment setup section in the [getting started](getting_started.
 
 ## Installation and Compilation
 
-Refer to [getting started](getting_started.md) for FlagCX compilation and installation.
+Refer to [getting started](getting_started.md) for SDCCL compilation and installation.
 
-## Homogeneous Tests Using FlagCX
+## Homogeneous Tests Using SDCCL
 
 ### Communication API Test
 
@@ -22,7 +22,7 @@ Refer to [getting started](getting_started.md) for FlagCX compilation and instal
 
    **Description**
 
-   -  `test_allreduce` is a performance benchmark for AllReduce operations built on MPI and FlagCX.
+   -  `test_allreduce` is a performance benchmark for AllReduce operations built on MPI and SDCCL.
       Each MPI process is bound to a single GPU.
       The program runs warm-up iterations followed by timed measurements across a user-defined range of
       message sizes (minimum, maximum, and step).
@@ -110,11 +110,11 @@ Refer to [getting started](getting_started.md) for FlagCX compilation and instal
        echo "NCCL debug information disabled."
    fi
    
-   export FLAGCX_IB_HCA=mlx5
-   export FLAGCX_DEBUG=TRUE
-   export FLAGCX_DEBUG_SUBSYS=ALL
+   export SDCCL_IB_HCA=mlx5
+   export SDCCL_DEBUG=TRUE
+   export SDCCL_DEBUG_SUBSYS=ALL
    export CUDA_VISIBLE_DEVICES=0,1
-   # Need to preload customized gloo library specified for FlagCX linkage
+   # Need to preload customized gloo library specified for SDCCL linkage
    # export LD_PRELOAD=/usr/local/lib/libgloo.so
    # export LD_PRELOAD=/usr/local/nccl/build/lib/libnccl.so
    export TORCH_DISTRIBUTED_DETAIL=DEBUG
@@ -138,14 +138,14 @@ Refer to [getting started](getting_started.md) for FlagCX compilation and instal
    - `master_port`: Port used by the master node to establish the process group.
      All nodes must use the same port, and the port has to be available on all nodes.
    - `example.py`: Torch API test script.
-   - Refer to [enviroment variables](enviroment_variables.md) for the usage of the various `FLAGCX_XXX` environment variables.
+   - Refer to [enviroment variables](enviroment_variables.md) for the usage of the various `SDCCL_XXX` environment variables.
 
 3. Sample screenshot from a correct performance test
 
    ![sample_screenshot_of_correct_performance_test.png](images/sample_screenshot_of_correct_performance_test.png)
 
 
-## Homogeneous Training with FlagCX + FlagScale
+## Homogeneous Training with SDCCL + FlagScale
 
 The following steps shows an example in which we run the LLaMA3-8B model on Nvidia A800 GPUs.
 
@@ -224,10 +224,10 @@ The following steps shows an example in which we run the LLaMA3-8B model on Nvid
 
        **System Section**
 
-       Add the following line to enable distributed training with FlagCX:
+       Add the following line to enable distributed training with SDCCL:
 
        ```Plain
-       distributed_backend: flagcx
+       distributed_backend: sdccl
        ```
 
        **Model Section**
@@ -307,7 +307,7 @@ The following steps shows an example in which we run the LLaMA3-8B model on Nvid
 
      ![distributed_training.png](images/distributed_training.png)
 
-## Heterogeneous Tests Using FlagCX
+## Heterogeneous Tests Using SDCCL
 
 ### Communication API Test
 
@@ -328,7 +328,7 @@ The following steps shows an example in which we run the LLaMA3-8B model on Nvid
 
    ```
    # Navigate to the Communication API test directory
-   cd /root/FlagCX/test/perf 
+   cd /root/SDCCL/test/perf 
    
    # Open the Makefile
    vi Makefile
@@ -366,17 +366,17 @@ The following steps shows an example in which we run the LLaMA3-8B model on Nvid
      /workspace/mpich-4.2.3/build/bin/mpirun \
        -np 2 -hosts 10.1.15.233:1,10.1.15.67:1 \
        -env PATH=/workspace/mpich-4.2.3/build/bin \
-       -env LD_LIBRARY_PATH=/workspace/mpich-4.2.3/build/lib:/root/FlagCX/build/lib:/usr/local/mpi/lib/:/opt/maca/ompi/lib \
-       -env FLAGCX_IB_HCA=mlx5 \
-       -env FLAGCX_DEBUG=INFO \
-       -env FLAGCX_DEBUG_SUBSYS=INIT \
-       /root/FlagCX/test/perf/test_allreduce -b 128K -e 4G -f 2 -w 5 -n 100 -p 1`
+       -env LD_LIBRARY_PATH=/workspace/mpich-4.2.3/build/lib:/root/SDCCL/build/lib:/usr/local/mpi/lib/:/opt/maca/ompi/lib \
+       -env SDCCL_IB_HCA=mlx5 \
+       -env SDCCL_DEBUG=INFO \
+       -env SDCCL_DEBUG_SUBSYS=INIT \
+       /root/SDCCL/test/perf/test_allreduce -b 128K -e 4G -f 2 -w 5 -n 100 -p 1`
      ```
 
-     - Refer to [enviroment_variables.md](enviroment_variables.md) for the meaning and usage of `FLAGCX_XXX` environment variables.
+     - Refer to [enviroment_variables.md](enviroment_variables.md) for the meaning and usage of `SDCCL_XXX` environment variables.
 
 
-   - **Note:** When using two GPUs per node in the heterogeneous Communication API test, some warnings may indicate that each node only has 1 GPU active. In this case, FlagCX will skip GPU-to-GPU AllReduce and fall back to host-based communication.
+   - **Note:** When using two GPUs per node in the heterogeneous Communication API test, some warnings may indicate that each node only has 1 GPU active. In this case, SDCCL will skip GPU-to-GPU AllReduce and fall back to host-based communication.
 
      - As a result, GPU utilization may show 0%, and the overall AllReduce runtime may be much longer.
      

@@ -24,7 +24,7 @@ repos:
 #         # skip for the moment 
 #         exclude: |
 #           (?x)^(
-#               flagcx/flagcx.cc|
-#               flagcx/include/flagcx.h
+#               sdccl/sdccl.cc|
+#               sdccl/include/sdccl.h
 #           )$
 #         language: system

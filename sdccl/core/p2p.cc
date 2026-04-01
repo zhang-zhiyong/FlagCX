@@ -1,0 +1,1173 @@
+#include "p2p.h"
+#include "adaptor.h"
+#include "comm.h"
+#include "info.h"
+#include "proxy.h"
+#include "reg_pool.h"
+#include <algorithm>
+#include <cassert>
+#include <map>
+#include <sched.h>  // for sched_yield
+#include <string.h> // for memcpy
+
+int64_t sdcclP2pBufferSize;
+int64_t sdcclP2pChunkSize;
+int64_t sdcclP2pChunks;
+
+size_t computeP2pChunkSize(size_t nbytes) {
+  size_t dynamicBufferSize = sdcclP2pBufferSize;
+  if (nbytes < (size_t)sdcclP2pBufferSize) {
+    size_t msize = nbytes / (1024 * 1024);
+    int adjustFactor = 0;
+    if (msize >= 32)
+      adjustFactor = 1;
+    else if (msize >= 16)
+      adjustFactor = 2;
+    else if (msize >= 8)
+      adjustFactor = 4;
+    else if (msize >= 4)
+      adjustFactor = 8;
+    else if (msize >= 2)
+      adjustFactor = 16;
+    else if (msize >= 1)
+      adjustFactor = 32;
+    else
+      adjustFactor = 64;
+    dynamicBufferSize = sdcclP2pBufferSize / adjustFactor;
+  }
+  return dynamicBufferSize / sdcclP2pChunks;
+}
+
+struct p2pIpcExpInfo {
+  sdcclP2pIpcDesc ipcDesc;
+  bool legacyIpcCap;
+  int impFd;
+  size_t size;
+  uintptr_t offset; // page gap: regAddr - baseAddr (constant per registration)
+  uintptr_t
+      userOffset; // recv-side local offset: userbuff - regAddr (fresh per call)
+};
+
+static std::map<uint64_t, std::pair<int, int>>
+    p2pOpHashMap;                         // <opHash, sendCounter, recvCounter>
+constexpr unsigned int rankBits = 14;     // 16384 ranks
+constexpr unsigned int peerDeltaBits = 5; // [-16, +15]
+constexpr unsigned int sizeBits = 37;     // 128GB
+constexpr unsigned int dtypeBits = 4;     // 16
+constexpr unsigned int reservedBits = 4;
+constexpr int deltaMin = -(1 << (peerDeltaBits - 1));    // -16
+constexpr int deltaMax = (1 << (peerDeltaBits - 1)) - 1; // +15
+
+static inline uint64_t makeKey(uint32_t rank, uint32_t peerRank, uint64_t size,
+                               sdcclDataType_t dtype) {
+  assert(rank < (1ULL << rankBits));
+  assert(peerRank < (1ULL << rankBits));
+  assert(size < (1ULL << sizeBits));
+  assert(dtype < (1ULL << dtypeBits));
+
+  // Encode peerRank as signed delta from rank
+  int delta = (int)peerRank - (int)rank; // [-16, +15]
+  assert(delta >= deltaMin && delta <= deltaMax);
+  uint32_t deltaEnc = (uint32_t)(delta - deltaMin); // map [-16,+15] -> [0,31]
+
+  uint64_t key = 0;
+  key |= (uint64_t(rank) & ((1ULL << rankBits) - 1))
+         << (peerDeltaBits + sizeBits + dtypeBits + reservedBits);
+  key |= (uint64_t(deltaEnc) & ((1ULL << peerDeltaBits) - 1))
+         << (sizeBits + dtypeBits + reservedBits);
+  key |= (uint64_t(size) & ((1ULL << sizeBits) - 1))
+         << (dtypeBits + reservedBits);
+  key |= (uint64_t(dtype) & ((1ULL << dtypeBits) - 1)) << reservedBits;
+  return key;
+}
+
+void setP2pSlotInfo(int rank, int peerRank, size_t size, sdcclDataType_t dtype,
+                    int isRecv, uint64_t *opHash, size_t *slotIdx) {
+  uint64_t key = makeKey(rank, peerRank, size, dtype);
+  int opHashCounter;
+  auto it = p2pOpHashMap.find(key);
+  if (it != p2pOpHashMap.end()) {
+    if (isRecv) {
+      opHashCounter = ++(it->second.second);
+    } else {
+      opHashCounter = ++(it->second.first);
+    }
+  } else {
+    if (isRecv) {
+      p2pOpHashMap[key] = std::make_pair(0, 1);
+    } else {
+      p2pOpHashMap[key] = std::make_pair(1, 0);
+    }
+    opHashCounter = 1;
+  }
+  // Ensure that opHash is unique for each operation
+  *opHash = key + opHashCounter;
+  // First half slots for send, second half for recv
+  *slotIdx = (*opHash) % (SDCCL_P2P_MAX_OPS / 2);
+  if (isRecv) {
+    *slotIdx += (SDCCL_P2P_MAX_OPS / 2);
+  }
+}
+
+static inline bool slotIsReusable(sdcclP2pSyncSlot *s) {
+  return (__atomic_load_n(&s->opHash, __ATOMIC_ACQUIRE) == -1);
+}
+
+static inline bool slotIsComplete(sdcclP2pSyncSlot *s) {
+  return (__atomic_load_n(&s->done, __ATOMIC_ACQUIRE) == 1 &&
+          __atomic_load_n(&s->peerDone, __ATOMIC_ACQUIRE) == 1);
+}
+
+static inline void resetSlot(sdcclP2pSyncSlot *slotPtr,
+                             struct p2pRegInfo *regPtr, int64_t newHash) {
+  // Reset reg info BEFORE publishing opHash — peer acquires on opHash,
+  // so regPtr fields must be visible-before the hash publication.
+  if (regPtr != NULL) {
+    __atomic_store_n(&regPtr->copyStarted, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&regPtr->copyDone, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&regPtr->ipcUserOffset, (uintptr_t)0, __ATOMIC_RELAXED);
+    __atomic_store_n(&regPtr->ipcRegReady, 0, __ATOMIC_RELEASE);
+  }
+  if (slotPtr != NULL) {
+    __atomic_store_n(&slotPtr->sendHead, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&slotPtr->recvTail, sdcclP2pChunks, __ATOMIC_RELAXED);
+    __atomic_store_n(&slotPtr->done, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&slotPtr->peerDone, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&slotPtr->opHash, newHash, __ATOMIC_RELEASE);
+  }
+}
+
+sdcclResult_t sdcclP2pProxySend(struct sdcclP2pResources *resources,
+                                  void *data, size_t size,
+                                  struct sdcclProxyArgs *args) {
+  // Avoid further processing slots if done
+  if (args->done == 1)
+    return sdcclSuccess;
+  // Make sure data is valid
+  if (!args->semaphore->pollStart(args->opId, args->step))
+    return sdcclSuccess;
+
+  struct sdcclP2pSyncSlot *slotPtr =
+      &resources->proxyInfo.shm->slots[args->p2pSlotIdx];
+  struct sdcclP2pSyncSlot *peerSlotPtr =
+      &resources->proxyInfo.shm->slots[args->p2pPeerSlotIdx];
+  struct p2pRegInfo *regInfoPtr =
+      &resources->proxyInfo.shm->regInfos[args->p2pSlotIdx];
+
+  // Reset slot for new operation, only if previous operation
+  // is done for both sides
+  if (slotIsReusable(slotPtr)) {
+    resetSlot(slotPtr, regInfoPtr, args->p2pOpHash);
+  }
+
+  // Retry later since the slot is still in use
+  if (__atomic_load_n(&slotPtr->opHash, __ATOMIC_ACQUIRE) != args->p2pOpHash)
+    return sdcclSuccess;
+
+  // Retry later since the peer slot is still in use
+  if (__atomic_load_n(&peerSlotPtr->opHash, __ATOMIC_ACQUIRE) !=
+          args->p2pPeerOpHash &&
+      __atomic_load_n(&slotPtr->peerDone, __ATOMIC_ACQUIRE) == 0)
+    return sdcclSuccess;
+
+  // Zero-copy mode: sender directly copies to receiver's buffer
+  if (args->regBufFlag && args->p2pRmtAddr) {
+    if (args->transmitted < args->chunkSteps) {
+      // Single-step copy directly to receiver's buffer
+      if (args->copied == 0) {
+        __atomic_store_n(&regInfoPtr->copyStarted, 1, __ATOMIC_RELEASE);
+        SDCCLCHECK(deviceAdaptor->deviceMemcpy(
+            (void *)args->p2pRmtAddr, data, size, sdcclMemcpyDeviceToDevice,
+            resources->proxyInfo.stream, NULL));
+        SDCCLCHECK(deviceAdaptor->eventRecord(resources->proxyInfo.events[0],
+                                               resources->proxyInfo.stream));
+        args->copied = args->chunkSteps; // Mark all chunks as copied
+        args->totalCopySize = size;
+      }
+
+      // Check if copy is complete
+      if (args->transmitted < args->copied) {
+        sdcclResult_t res =
+            deviceAdaptor->eventQuery(resources->proxyInfo.events[0]);
+        if (res == sdcclSuccess) {
+          args->transmitted = args->chunkSteps;
+          __atomic_store_n(&regInfoPtr->copyDone, 1, __ATOMIC_RELEASE);
+        }
+      }
+    } else {
+      // Cleanup phase
+      if (args->done != 1) {
+        if (__atomic_load_n(&slotPtr->done, __ATOMIC_ACQUIRE) != 1) {
+          __atomic_store_n(&slotPtr->done, 1, __ATOMIC_RELAXED);
+          __atomic_store_n(&peerSlotPtr->peerDone, 1, __ATOMIC_RELEASE);
+        }
+        if (slotIsComplete(slotPtr)) {
+          __atomic_store_n(&slotPtr->opHash, -1, __ATOMIC_RELEASE);
+          args->semaphore->subCounter(args->opId);
+          args->done = 1;
+        }
+      }
+    }
+    return sdcclSuccess;
+  }
+
+  // Non-zero-copy mode: use FIFO buffer
+  if (args->transmitted < args->chunkSteps) {
+    if (args->copied < args->chunkSteps &&
+        args->copied - args->transmitted < sdcclP2pChunks) {
+      int step = args->copied & args->sendStepMask;
+
+      volatile uint64_t *recvTail = &peerSlotPtr->recvTail;
+
+      if (__atomic_load_n(recvTail, __ATOMIC_ACQUIRE) > args->copied) {
+        args->subs[step].stepSize =
+            std::min(args->chunkSize, size - args->totalCopySize);
+        args->subs[step].stepBuff =
+            resources->proxyInfo.recvFifo + (args->chunkSize * step);
+
+        SDCCLCHECK(deviceAdaptor->deviceMemcpy(
+            args->subs[step].stepBuff, (char *)data + args->totalCopySize,
+            args->subs[step].stepSize, sdcclMemcpyDeviceToDevice,
+            resources->proxyInfo.stream, args->subs[step].copyArgs));
+        SDCCLCHECK(deviceAdaptor->eventRecord(
+            resources->proxyInfo.events[step], resources->proxyInfo.stream));
+
+        args->totalCopySize += args->subs[step].stepSize;
+        args->copied++;
+      }
+    }
+
+    if (args->transmitted < args->copied) {
+      int step = args->transmitted & args->sendStepMask;
+      sdcclResult_t res =
+          deviceAdaptor->eventQuery(resources->proxyInfo.events[step]);
+
+      if (res == sdcclSuccess) {
+        args->transmitted++;
+        // Update sendHead in the shared slot
+        volatile uint64_t *sendHead = &slotPtr->sendHead;
+        __atomic_store_n(sendHead, args->transmitted, __ATOMIC_RELEASE);
+      }
+    }
+  } else {
+    if (args->done != 1) {
+      if (__atomic_load_n(&slotPtr->done, __ATOMIC_ACQUIRE) != 1) {
+        __atomic_store_n(&slotPtr->done, 1, __ATOMIC_RELAXED);
+        __atomic_store_n(&peerSlotPtr->peerDone, 1, __ATOMIC_RELEASE);
+      }
+      if (slotIsComplete(slotPtr)) {
+        __atomic_store_n(&slotPtr->opHash, -1, __ATOMIC_RELEASE);
+        args->semaphore->subCounter(args->opId);
+        args->done = 1;
+      }
+    }
+  }
+  return sdcclSuccess;
+}
+
+sdcclResult_t sdcclP2pProxyRecv(struct sdcclP2pResources *resources,
+                                  void *data, size_t size,
+                                  struct sdcclProxyArgs *args) {
+  // Avoid further processing slots if done
+  if (args->done == 1)
+    return sdcclSuccess;
+  // Make sure data is valid
+  if (!args->semaphore->pollStart(args->opId, args->step))
+    return sdcclSuccess;
+
+  struct sdcclP2pSyncSlot *slotPtr =
+      &resources->proxyInfo.shm->slots[args->p2pSlotIdx];
+  struct sdcclP2pSyncSlot *peerSlotPtr =
+      &resources->proxyInfo.shm->slots[args->p2pPeerSlotIdx];
+  // For zero-copy, receiver checks sender's regInfo (using peerSlotIdx)
+  struct p2pRegInfo *peerRegInfoPtr =
+      &resources->proxyInfo.shm->regInfos[args->p2pPeerSlotIdx];
+
+  // Reset slot for new operation, only if previous operation
+  // is done for both sides
+  if (slotIsReusable(slotPtr)) {
+    resetSlot(slotPtr, NULL, args->p2pOpHash);
+  }
+
+  // Return and retry later since the slot is still in use
+  if (__atomic_load_n(&slotPtr->opHash, __ATOMIC_ACQUIRE) != args->p2pOpHash)
+    return sdcclSuccess;
+
+  // Retry later since the peer slot is still in use
+  if (__atomic_load_n(&peerSlotPtr->opHash, __ATOMIC_ACQUIRE) !=
+          args->p2pPeerOpHash &&
+      __atomic_load_n(&slotPtr->peerDone, __ATOMIC_ACQUIRE) == 0)
+    return sdcclSuccess;
+
+  // Zero-copy mode: receiver just waits for sender to complete the copy
+  if (args->regBufFlag) {
+    if (args->transmitted < args->chunkSteps) {
+      // Wait for sender to signal copyDone
+      if (__atomic_load_n(&peerRegInfoPtr->copyDone, __ATOMIC_ACQUIRE) == 1) {
+        args->copied = args->chunkSteps;
+        args->transmitted = args->chunkSteps;
+        args->totalCopySize = size;
+      }
+    } else {
+      // Cleanup phase
+      if (args->done != 1) {
+        if (__atomic_load_n(&slotPtr->done, __ATOMIC_ACQUIRE) != 1) {
+          __atomic_store_n(&slotPtr->done, 1, __ATOMIC_RELAXED);
+          __atomic_store_n(&peerSlotPtr->peerDone, 1, __ATOMIC_RELEASE);
+        }
+        if (slotIsComplete(slotPtr)) {
+          __atomic_store_n(&slotPtr->opHash, -1, __ATOMIC_RELEASE);
+          args->semaphore->subCounter(args->opId);
+          args->done = 1;
+        }
+      }
+    }
+    return sdcclSuccess;
+  }
+
+  // Non-zero-copy mode: use FIFO buffer
+  if (args->transmitted < args->chunkSteps) {
+    if (args->copied < args->chunkSteps &&
+        args->copied - args->transmitted < sdcclP2pChunks) {
+      int step = args->copied & args->sendStepMask;
+      volatile uint64_t *sendHead = &peerSlotPtr->sendHead;
+
+      if (__atomic_load_n(sendHead, __ATOMIC_ACQUIRE) > args->copied) {
+        args->subs[step].stepSize =
+            std::min(args->chunkSize, size - args->totalCopySize);
+        args->subs[step].stepBuff =
+            resources->proxyInfo.recvFifo + (args->chunkSize * step);
+
+        SDCCLCHECK(deviceAdaptor->deviceMemcpy(
+            (char *)data + args->totalCopySize, args->subs[step].stepBuff,
+            args->subs[step].stepSize, sdcclMemcpyDeviceToDevice,
+            resources->proxyInfo.stream, args->subs[step].copyArgs));
+        SDCCLCHECK(deviceAdaptor->eventRecord(
+            resources->proxyInfo.events[step], resources->proxyInfo.stream));
+
+        args->totalCopySize += args->subs[step].stepSize;
+        args->copied++;
+      }
+    }
+
+    if (args->transmitted < args->copied) {
+      int step = args->transmitted & args->sendStepMask;
+      sdcclResult_t res =
+          deviceAdaptor->eventQuery(resources->proxyInfo.events[step]);
+
+      if (res == sdcclSuccess) {
+        args->transmitted++;
+        // Update recvTail in the shared slot
+        volatile uint64_t *recvTail = &slotPtr->recvTail;
+        __atomic_store_n(recvTail, args->transmitted + sdcclP2pChunks,
+                         __ATOMIC_RELEASE);
+      }
+    }
+  } else {
+    if (args->done != 1) {
+      if (__atomic_load_n(&slotPtr->done, __ATOMIC_ACQUIRE) != 1) {
+        __atomic_store_n(&slotPtr->done, 1, __ATOMIC_RELAXED);
+        __atomic_store_n(&peerSlotPtr->peerDone, 1, __ATOMIC_RELEASE);
+      }
+      if (slotIsComplete(slotPtr)) {
+        __atomic_store_n(&slotPtr->opHash, -1, __ATOMIC_RELEASE);
+        args->semaphore->subCounter(args->opId);
+        args->done = 1;
+      }
+    }
+  }
+  return sdcclSuccess;
+}
+
+sdcclResult_t sdcclP2pProxySelfCopy(struct sdcclP2pResources *resources,
+                                      void *sendData, void *recvData,
+                                      size_t size,
+                                      struct sdcclProxyArgs *args) {
+  // Return if done
+  if (args->done == 1)
+    return sdcclSuccess;
+  // Make sure data is valid
+  if (!args->semaphore->pollStart(args->opId, args->step))
+    return sdcclSuccess;
+
+  if (args->transmitted < args->chunkSteps) {
+    // Perform single copy step
+    if (args->copied < args->chunkSteps) {
+      SDCCLCHECK(deviceAdaptor->deviceMemcpy(
+          recvData, sendData, size, sdcclMemcpyDeviceToDevice,
+          resources->proxyInfo.stream, NULL));
+      SDCCLCHECK(
+          deviceAdaptor->eventRecord(resources->proxyInfo.events[args->copied],
+                                     resources->proxyInfo.stream));
+      args->copied++;
+    }
+
+    // Check for completed copy step
+    if (args->transmitted < args->copied) {
+      sdcclResult_t res = deviceAdaptor->eventQuery(
+          resources->proxyInfo.events[args->transmitted]);
+      if (res == sdcclSuccess) {
+        args->transmitted++;
+      }
+    }
+  } else {
+    if (args->done != 1) {
+      args->semaphore->subCounter(args->opId);
+      args->done = 1;
+    }
+  }
+  return sdcclSuccess;
+}
+
+sdcclResult_t sdcclP2pSendProxySetup(struct sdcclProxyConnection *connection,
+                                       struct sdcclProxyState *proxyState,
+                                       void *reqBuff, int reqSize,
+                                       void *respBuff, int respSize,
+                                       int *done) {
+  if (respSize != sizeof(struct sdcclP2pShmProxyInfo))
+    return sdcclInternalError;
+
+  // Use the resources that was already allocated by transport.cc
+  struct sdcclP2pResources *resources =
+      (struct sdcclP2pResources *)connection->transportResources;
+  if (resources == NULL) {
+    WARN("sdcclP2pSendProxySetup: transportResources is NULL");
+    return sdcclInternalError;
+  }
+
+  // Allocate shared memory and store in resources->proxyInfo
+  size_t shmSize = sizeof(struct sdcclP2pShm);
+  INFO(SDCCL_P2P, "sdcclP2pSendProxySetup: Allocating shared memory size=%zu",
+       shmSize);
+  SDCCLCHECK(sdcclShmAllocateShareableBuffer(
+      shmSize, &resources->proxyInfo.desc, (void **)&resources->proxyInfo.shm,
+      NULL));
+
+  // Initialize all synchronization slots
+  for (int i = 0; i < SDCCL_P2P_MAX_OPS; i++) {
+    resources->proxyInfo.shm->slots[i].sendHead = 0;
+    resources->proxyInfo.shm->slots[i].recvTail = sdcclP2pChunks;
+    resources->proxyInfo.shm->slots[i].opHash = -1;
+    resources->proxyInfo.shm->slots[i].done = 1;     // 1 = slot is free
+    resources->proxyInfo.shm->slots[i].peerDone = 1; // 1 = slot is free
+  }
+  // Explicitly zero-init regInfos[] — defensive against non-zero SHM memory
+  for (int i = 0; i < SDCCL_P2P_MAX_OPS; i++) {
+    memset(&resources->proxyInfo.shm->regInfos[i], 0,
+           sizeof(resources->proxyInfo.shm->regInfos[i]));
+  }
+
+  INFO(SDCCL_P2P, "sdcclP2pSendProxySetup: Copying response, shm=%p",
+       resources->proxyInfo.shm);
+  memcpy(respBuff, &resources->proxyInfo, sizeof(struct sdcclP2pShmProxyInfo));
+  *done = 1;
+
+  INFO(SDCCL_P2P, "sdcclP2pSendProxySetup: Completed successfully");
+  return sdcclSuccess;
+}
+
+sdcclResult_t sdcclP2pRecvProxySetup(struct sdcclProxyConnection *connection,
+                                       struct sdcclProxyState *proxyState,
+                                       void *reqBuff, int reqSize,
+                                       void *respBuff, int respSize,
+                                       int *done) {
+  INFO(SDCCL_P2P,
+       "sdcclP2pRecvProxySetup: reqSize=%d respSize=%d expectedReqSize=%zu "
+       "expectedRespSize=%zu",
+       reqSize, respSize, sizeof(struct sdcclP2pRequest),
+       sizeof(struct sdcclP2pBuff));
+
+  struct sdcclP2pRequest *req = (struct sdcclP2pRequest *)reqBuff;
+
+  if (reqSize != sizeof(struct sdcclP2pRequest)) {
+    WARN("sdcclP2pRecvProxySetup: Invalid reqSize %d, expected %zu", reqSize,
+         sizeof(struct sdcclP2pRequest));
+    return sdcclInternalError;
+  }
+
+  int size = req->size;
+  if (respSize != sizeof(struct sdcclP2pBuff))
+    return sdcclInternalError;
+  struct sdcclP2pBuff *p2pBuff = (struct sdcclP2pBuff *)respBuff;
+  SDCCLCHECK(sdcclP2pAllocateShareableBuffer(
+      size, req->refcount, &p2pBuff->ipcDesc, &p2pBuff->directPtr));
+  p2pBuff->size = size;
+  *done = 1;
+  return sdcclSuccess;
+}
+
+sdcclResult_t
+sdcclP2pSendProxyConnect(struct sdcclProxyConnection *connection,
+                          struct sdcclProxyState *proxyState, void *reqBuff,
+                          int reqSize, void *respBuff, int respSize,
+                          int *done) {
+  // Use the resources that was already allocated by transport.cc
+  struct sdcclP2pResources *resources =
+      (struct sdcclP2pResources *)connection->transportResources;
+
+  if (resources == NULL) {
+    WARN("sdcclP2pSendProxyConnect: transportResources is NULL");
+    return sdcclInternalError;
+  }
+
+  // Recv sends recvFifo pointer to us
+  if (reqSize != sizeof(void *)) {
+    WARN("sdcclP2pSendProxyConnect: Invalid reqSize %d, expected %zu", reqSize,
+         sizeof(void *));
+    return sdcclInternalError;
+  }
+
+  resources->proxyInfo.recvFifo = *((char **)reqBuff);
+
+  // Create stream and events for data transfers
+  SDCCLCHECK(deviceAdaptor->streamCreate(&resources->proxyInfo.stream));
+  for (int i = 0; i < sdcclP2pChunks; i++) {
+    SDCCLCHECK(deviceAdaptor->eventCreate(&resources->proxyInfo.events[i],
+                                           sdcclEventDisableTiming));
+  }
+
+  *done = 1;
+  INFO(SDCCL_P2P, "sdcclP2pSendProxyConnect: Completed, recvFifo=%p",
+       resources->proxyInfo.recvFifo);
+  return sdcclSuccess;
+}
+
+sdcclResult_t
+sdcclP2pRecvProxyConnect(struct sdcclProxyConnection *connection,
+                          struct sdcclProxyState *proxyState, void *reqBuff,
+                          int reqSize, void *respBuff, int respSize,
+                          int *done) {
+  // Use the resources that was already allocated by transport.cc
+  struct sdcclP2pResources *resources =
+      (struct sdcclP2pResources *)connection->transportResources;
+
+  if (resources == NULL) {
+    WARN("sdcclP2pRecvProxyConnect: transportResources is NULL");
+    return sdcclInternalError;
+  }
+
+  // Create stream and events for data transfers
+  SDCCLCHECK(deviceAdaptor->streamCreate(&resources->proxyInfo.stream));
+  for (int i = 0; i < sdcclP2pChunks; i++) {
+    SDCCLCHECK(deviceAdaptor->eventCreate(&resources->proxyInfo.events[i],
+                                           sdcclEventDisableTiming));
+  }
+
+  *done = 1;
+  INFO(SDCCL_P2P, "sdcclP2pRecvProxyConnect: Completed");
+  return sdcclSuccess;
+}
+
+sdcclResult_t
+sdcclP2pAllocateShareableBuffer(size_t size, int directMap,
+                                 struct sdcclP2pIpcDesc *ipcDesc, void **ptr) {
+  // 'directMap' parameter is reserved for future cuMem (direct mapping)
+  SDCCLCHECK(deviceAdaptor->deviceMalloc(ptr, size, sdcclMemDevice, NULL));
+  size_t ipcSize = 0;
+  sdcclIpcMemHandle_t handlePtr = NULL;
+  sdcclResult_t res = deviceAdaptor->ipcMemHandleCreate(&handlePtr, &ipcSize);
+  if (res != sdcclSuccess) {
+    WARN("deviceAdaptor->ipcMemHandleCreate failed");
+    deviceAdaptor->deviceFree(*ptr, sdcclMemDevice, NULL);
+    *ptr = NULL;
+    return res;
+  }
+
+  // Get the actual IPC handle data
+  res = deviceAdaptor->ipcMemHandleGet(handlePtr, *ptr);
+  if (res != sdcclSuccess) {
+    WARN("deviceAdaptor->ipcMemHandleGet failed for ptr %p size %zu", *ptr,
+         size);
+    deviceAdaptor->ipcMemHandleFree(handlePtr);
+    deviceAdaptor->deviceFree(*ptr, sdcclMemDevice, NULL);
+    *ptr = NULL;
+    return res;
+  }
+  memcpy(&ipcDesc->handleData, handlePtr, sizeof(sdcclIpcHandleData));
+  ipcDesc->size = size;
+
+  // Free the temporary handle wrapper
+  deviceAdaptor->ipcMemHandleFree(handlePtr);
+  return sdcclSuccess;
+}
+
+sdcclResult_t sdcclP2pImportShareableBuffer(struct sdcclHeteroComm *comm,
+                                              int peer, size_t size,
+                                              struct sdcclP2pIpcDesc *ipcDesc,
+                                              void **devMemPtr) {
+  *devMemPtr = NULL;
+
+  // CRITICAL: Set device context before opening IPC handle
+  SDCCLCHECK(deviceAdaptor->setDevice(comm->cudaDev));
+  sdcclIpcMemHandle_t handlePtr = (sdcclIpcMemHandle_t)&ipcDesc->handleData;
+
+  sdcclResult_t res = deviceAdaptor->ipcMemHandleOpen(handlePtr, devMemPtr);
+  if (res != sdcclSuccess) {
+    WARN("Failed to open IPC handle for peer %d: error %d", peer, res);
+    return res;
+  }
+  if (*devMemPtr == NULL) {
+    WARN("IPC handle opened but devMemPtr is NULL for peer %d", peer);
+    return sdcclInternalError;
+  }
+  INFO(SDCCL_P2P,
+       "Imported shareable buffer from peer %d device %d size %zu ptr %p", peer,
+       comm->cudaDev, size, *devMemPtr);
+
+  return sdcclSuccess;
+}
+
+static sdcclResult_t p2pRegisterBuffer(
+    sdcclHeteroComm *comm, const void *userbuff, size_t buffsize,
+    struct sdcclConnector **peerConns, int *peerRanks, int nPeers,
+    sdcclReg *regRecord, bool isSender, int *regBufFlag, uintptr_t *offsetOut,
+    uintptr_t **peerRmtAddrsOut, bool *isLegacyIpc, size_t shmRegSlotIdx) {
+  sdcclResult_t ret = sdcclSuccess;
+  *regBufFlag = 0;
+  *offsetOut = 0;
+  *peerRmtAddrsOut = NULL;
+  int legacyIpcCap = 0;
+  uintptr_t baseAddr = 0;
+  uintptr_t baseSize = 0;
+
+  if (isLegacyIpc)
+    *isLegacyIpc = false;
+  sdcclRegItem *regItem =
+      globalRegPool.getItem(comm, const_cast<void *>(userbuff));
+  if (regRecord == NULL || regItem == NULL) {
+    INFO(SDCCL_REG,
+         "p2pRegisterBuffer skip: regRecord=%p regItem=%p for buff %p size %zu",
+         regRecord, regItem, userbuff, buffsize);
+    return sdcclSuccess;
+  }
+  INFO(SDCCL_REG,
+       "p2pRegisterBuffer enter: rank %d buff %p size %zu regAddr %p "
+       "handles=%zu peers=%d isSender=%d",
+       comm ? comm->rank : -1, userbuff, buffsize, (void *)regRecord->addr,
+       regItem->handles.size(), nPeers, (int)isSender);
+
+  // Compute base address range (once, shared across peers)
+  {
+    uintptr_t beginAddr = 0;
+    uintptr_t endAddr = 0;
+    if (regRecord->baseAddr && regRecord->baseSize) {
+      beginAddr = regRecord->baseAddr;
+      endAddr = regRecord->baseAddr + regRecord->baseSize;
+    } else {
+      globalRegPool.getPagedAddr(const_cast<void *>(userbuff), buffsize,
+                                 &beginAddr, &endAddr);
+    }
+    baseAddr = beginAddr;
+    baseSize = endAddr - beginAddr;
+    legacyIpcCap = 1;
+    INFO(SDCCL_REG,
+         "rank %d - computed register range base=%p size=%zu user=%p "
+         "regAddr=%p",
+         comm->rank, (void *)baseAddr, (size_t)baseSize, userbuff,
+         (void *)regRecord->addr);
+  }
+
+  // Compute offsets:
+  // pageGap: constant per registration (base-addr to registered-buffer-start)
+  // userOffset: per-call (registered-buffer-start to this call's userbuff)
+  assert((uintptr_t)regRecord->addr >= baseAddr);
+  uintptr_t pageGap = regRecord->addr - baseAddr;
+  assert((uintptr_t)userbuff >= regRecord->addr);
+  uintptr_t userOffset = (uintptr_t)userbuff - regRecord->addr;
+
+  for (int p = 0; p < nPeers; p++) {
+    int peerRank = peerRanks[p];
+    struct sdcclConnector *peerConn = peerConns[p];
+    struct sdcclProxyConnector *proxyConn = &peerConn->proxyConn;
+
+    // Access the P2P SHM shared with peer (set up during transport setup)
+    struct sdcclP2pResources *resources =
+        (struct sdcclP2pResources *)proxyConn->connection->transportResources;
+    struct sdcclP2pShm *shm =
+        (resources != NULL) ? resources->proxyInfo.shm : NULL;
+
+    // Check cache: existing info with handleReady
+    sdcclIpcRegInfo *existingInfo = NULL;
+    for (auto &handlePair : regItem->handles) {
+      if (handlePair.second.proxyConn == proxyConn &&
+          handlePair.second.handle) {
+        existingInfo = (sdcclIpcRegInfo *)handlePair.second.handle;
+        break;
+      }
+    }
+
+    if (!isSender) {
+      // =========================================================
+      // RECV SIDE: create IPC handle (if needed), send offset via
+      // bootstrap (first call) or SHM (subsequent calls)
+      // =========================================================
+      if (existingInfo && existingInfo->handleReady) {
+        // Cache hit: write fresh userOffset to per-slot SHM, zero bootstrap
+        if (shm) {
+          __atomic_store_n(&shm->regInfos[shmRegSlotIdx].ipcUserOffset,
+                           userOffset, __ATOMIC_RELAXED);
+          __atomic_store_n(&shm->regInfos[shmRegSlotIdx].ipcRegReady, 1,
+                           __ATOMIC_RELEASE);
+        }
+        *regBufFlag = 1;
+        if (isLegacyIpc)
+          *isLegacyIpc = existingInfo->impInfo.legacyIpcCap;
+        INFO(SDCCL_REG,
+             "rank %d - recv cache HIT: buff %p peer %d userOffset %zu (SHM)",
+             comm->rank, userbuff, peerRank, userOffset);
+      } else {
+        // Cache miss: create IPC handle, bootstrap send, write SHM
+        struct p2pIpcExpInfo myIpcInfo;
+        memset(&myIpcInfo, 0, sizeof(p2pIpcExpInfo));
+
+        // Use pre-existing IPC handle from sdcclRegister() if available,
+        // otherwise create a new one
+        char zeros[sizeof(sdcclIpcHandleData)] = {};
+        if (memcmp(&regItem->ipcHandleData, zeros,
+                   sizeof(sdcclIpcHandleData)) != 0) {
+          memcpy(&myIpcInfo.ipcDesc.handleData, &regItem->ipcHandleData,
+                 sizeof(sdcclIpcHandleData));
+        } else if (legacyIpcCap) {
+          sdcclIpcMemHandle_t ipcHandle = NULL;
+          size_t handleSize = 0;
+          SDCCLCHECKGOTO(
+              deviceAdaptor->ipcMemHandleCreate(&ipcHandle, &handleSize), ret,
+              fail);
+          SDCCLCHECKGOTO(
+              deviceAdaptor->ipcMemHandleGet(ipcHandle, (void *)baseAddr), ret,
+              fail);
+          if (handleSize <= sizeof(sdcclIpcHandleData)) {
+            memcpy(&myIpcInfo.ipcDesc.handleData, ipcHandle, handleSize);
+          }
+          deviceAdaptor->ipcMemHandleFree(ipcHandle);
+        } else {
+          WARN("rank %d - Non-legacy IPC not implemented for peer %d",
+               comm->rank, peerRank);
+          ret = sdcclInternalError;
+          goto fail;
+        }
+
+        myIpcInfo.legacyIpcCap = true;
+        myIpcInfo.size = (size_t)baseSize;
+        myIpcInfo.offset = pageGap;
+        myIpcInfo.userOffset = userOffset;
+        if (isLegacyIpc)
+          *isLegacyIpc = true;
+
+        // One-way bootstrap: recv-side sends to peer
+        INFO(SDCCL_REG,
+             "rank %d - IPC recv-side bootstrap send to peer %d "
+             "pageGap=%zu userOffset=%zu",
+             comm->rank, peerRank, pageGap, userOffset);
+        SDCCLCHECKGOTO(bootstrapSend(comm->bootstrap, peerRank,
+                                      P2P_IPC_TAG_BASE + comm->rank, &myIpcInfo,
+                                      sizeof(p2pIpcExpInfo)),
+                        ret, fail);
+
+        // Also write to per-slot SHM for consistency
+        if (shm) {
+          __atomic_store_n(&shm->regInfos[shmRegSlotIdx].ipcUserOffset,
+                           userOffset, __ATOMIC_RELAXED);
+          __atomic_store_n(&shm->regInfos[shmRegSlotIdx].ipcRegReady, 1,
+                           __ATOMIC_RELEASE);
+        }
+
+        // Create cache entry (recv side: rmtRegAddr = NULL)
+        struct sdcclIpcRegInfo *newInfo = NULL;
+        if (!existingInfo) {
+          newInfo = (sdcclIpcRegInfo *)calloc(1, sizeof(sdcclIpcRegInfo));
+          if (newInfo == NULL) {
+            WARN("Failed to allocate IPC registration info");
+            ret = sdcclSystemError;
+            goto fail;
+          }
+          newInfo->peerRank = peerRank;
+          newInfo->baseAddr = (void *)baseAddr;
+          newInfo->ipcProxyconn = NULL;
+          SDCCLCHECKGOTO(
+              globalRegPool.addP2pHandle(comm, regItem, newInfo, proxyConn),
+              ret, fail);
+          existingInfo = newInfo;
+        }
+        existingInfo->impInfo.rmtRegAddr = NULL; // recv side doesn't open
+        existingInfo->impInfo.offset = pageGap;
+        existingInfo->impInfo.legacyIpcCap = true;
+        existingInfo->handleReady = true;
+        regRecord->state |= IPC_REG_COMPLETE;
+        *regBufFlag = 1;
+        INFO(SDCCL_REG,
+             "rank %d - recv-side registered buff %p for peer %d "
+             "pageGap=%zu userOffset=%zu",
+             comm->rank, userbuff, peerRank, pageGap, userOffset);
+      }
+    } else {
+      // =========================================================
+      // SEND SIDE: open IPC handle (if needed), get offset via
+      // bootstrap (first call) or SHM (subsequent calls)
+      // =========================================================
+      uintptr_t receivedUserOffset = 0;
+
+      if (existingInfo && existingInfo->handleReady) {
+        // Cache hit: read fresh userOffset from per-slot SHM, zero bootstrap
+        if (shm) {
+          int spinCount = 0;
+          while (__atomic_load_n(&shm->regInfos[shmRegSlotIdx].ipcRegReady,
+                                 __ATOMIC_ACQUIRE) != 1) {
+            if (++spinCount > 10000000) {
+              WARN("rank %d - send-side spin timeout waiting for ipcRegReady "
+                   "(peer %d, slot %zu)",
+                   comm->rank, peerRank, shmRegSlotIdx);
+              ret = sdcclInternalError;
+              goto fail;
+            }
+            sched_yield();
+          }
+          receivedUserOffset = __atomic_load_n(
+              &shm->regInfos[shmRegSlotIdx].ipcUserOffset, __ATOMIC_RELAXED);
+          __atomic_store_n(&shm->regInfos[shmRegSlotIdx].ipcRegReady, 0,
+                           __ATOMIC_RELEASE);
+        } else {
+          WARN("rank %d - send-side cache hit but shm is NULL for peer %d",
+               comm->rank, peerRank);
+          ret = sdcclInternalError;
+          goto fail;
+        }
+        *regBufFlag = 1;
+        if (isLegacyIpc)
+          *isLegacyIpc = existingInfo->impInfo.legacyIpcCap;
+
+        // Return fully resolved address
+        *peerRmtAddrsOut =
+            (uintptr_t *)((uintptr_t)existingInfo->impInfo.rmtRegAddr +
+                          receivedUserOffset);
+        *offsetOut = 0;
+        INFO(SDCCL_REG,
+             "rank %d - send cache HIT: peer %d rmtAddr %p + offset %zu = %p",
+             comm->rank, peerRank, existingInfo->impInfo.rmtRegAddr,
+             receivedUserOffset, *peerRmtAddrsOut);
+      } else {
+        // Cache miss: bootstrap recv + open IPC handle
+        struct p2pIpcExpInfo peerIpcInfo;
+        memset(&peerIpcInfo, 0, sizeof(p2pIpcExpInfo));
+
+        INFO(SDCCL_REG, "rank %d - IPC send-side bootstrap recv from peer %d",
+             comm->rank, peerRank);
+        SDCCLCHECKGOTO(bootstrapRecv(comm->bootstrap, peerRank,
+                                      P2P_IPC_TAG_BASE + peerRank, &peerIpcInfo,
+                                      sizeof(p2pIpcExpInfo)),
+                        ret, fail);
+        receivedUserOffset = peerIpcInfo.userOffset;
+
+        // Clear per-slot SHM ready flag (bootstrap carried the offset this
+        // time)
+        if (shm) {
+          __atomic_store_n(&shm->regInfos[shmRegSlotIdx].ipcRegReady, 0,
+                           __ATOMIC_RELEASE);
+        }
+
+        // Open peer's IPC handle
+        void *rmtRegAddr = NULL;
+        deviceAdaptor->setDevice(comm->cudaDev);
+        if (peerIpcInfo.legacyIpcCap) {
+          sdcclIpcMemHandle_t ipcHandle =
+              (sdcclIpcMemHandle_t)&peerIpcInfo.ipcDesc.handleData;
+          SDCCLCHECKGOTO(
+              deviceAdaptor->ipcMemHandleOpen(ipcHandle, &rmtRegAddr), ret,
+              fail);
+          if (rmtRegAddr) {
+            rmtRegAddr = (void *)((uintptr_t)rmtRegAddr + peerIpcInfo.offset);
+          }
+        } else {
+          WARN("rank %d - Non-legacy IPC not implemented for peer %d",
+               comm->rank, peerRank);
+          ret = sdcclInternalError;
+          goto fail;
+        }
+
+        // Create cache entry (send side: cache rmtRegAddr)
+        struct sdcclIpcRegInfo *newInfo = NULL;
+        if (!existingInfo) {
+          newInfo = (sdcclIpcRegInfo *)calloc(1, sizeof(sdcclIpcRegInfo));
+          if (newInfo == NULL) {
+            WARN("Failed to allocate IPC registration info");
+            ret = sdcclSystemError;
+            goto fail;
+          }
+          newInfo->peerRank = peerRank;
+          newInfo->baseAddr = (void *)baseAddr;
+          newInfo->ipcProxyconn = NULL;
+          SDCCLCHECKGOTO(
+              globalRegPool.addP2pHandle(comm, regItem, newInfo, proxyConn),
+              ret, fail);
+          existingInfo = newInfo;
+        }
+
+        if (rmtRegAddr) {
+          existingInfo->impInfo.rmtRegAddr = rmtRegAddr;
+          existingInfo->impInfo.offset = peerIpcInfo.offset;
+          existingInfo->impInfo.legacyIpcCap = peerIpcInfo.legacyIpcCap;
+          existingInfo->handleReady = true;
+          regRecord->state |= IPC_REG_COMPLETE;
+          *regBufFlag = 1;
+
+          // Return fully resolved address
+          *peerRmtAddrsOut =
+              (uintptr_t *)((uintptr_t)rmtRegAddr + receivedUserOffset);
+          *offsetOut = 0;
+          if (isLegacyIpc)
+            *isLegacyIpc = peerIpcInfo.legacyIpcCap;
+          INFO(SDCCL_REG,
+               "rank %d - send-side opened IPC for peer %d "
+               "rmtAddr=%p + userOffset=%zu = %p",
+               comm->rank, peerRank, rmtRegAddr, receivedUserOffset,
+               *peerRmtAddrsOut);
+        }
+      }
+    }
+  }
+
+  return sdcclSuccess;
+
+fail:
+  return ret;
+}
+
+sdcclResult_t
+sdcclP2pRegisterBuffer(struct sdcclHeteroComm *comm, const void *userbuff,
+                        size_t buffSize, struct sdcclConnector **peerConns,
+                        int *peerRanks, int nPeers, bool isSender,
+                        int *regBufFlag, uintptr_t *offsetOut,
+                        uintptr_t **peerRmtAddrsOut, size_t shmRegSlotIdx) {
+  sdcclReg tempReg = {};
+  struct sdcclReg *regRecord = NULL;
+  *regBufFlag = 0;
+  *offsetOut = 0;
+  *peerRmtAddrsOut = NULL;
+  if (comm && userbuff && buffSize > 0 && nPeers > 0) {
+    INFO(SDCCL_REG,
+         "sdcclP2pRegisterBuffer enter: comm=%p rank=%d buff=%p size=%zu "
+         "nPeers=%d isSender=%d",
+         comm, comm->rank, userbuff, buffSize, nPeers, (int)isSender);
+    sdcclRegItem *regItem =
+        globalRegPool.getItem(comm, const_cast<void *>(userbuff));
+    if (regItem != NULL) {
+      tempReg.addr = regItem->beginAddr;
+      tempReg.baseAddr = regItem->beginAddr;
+      tempReg.baseSize = regItem->endAddr - regItem->beginAddr;
+      tempReg.regSize = tempReg.baseSize;
+      regRecord = &tempReg;
+    } else {
+      INFO(SDCCL_REG,
+           "sdcclP2pRegisterBuffer: no regItem for buff %p size %zu", userbuff,
+           buffSize);
+    }
+    SDCCLCHECK(p2pRegisterBuffer(
+        comm, userbuff, buffSize, peerConns, peerRanks, nPeers, regRecord,
+        isSender, regBufFlag, offsetOut, peerRmtAddrsOut, NULL, shmRegSlotIdx));
+    INFO(SDCCL_REG,
+         "sdcclP2pRegisterBuffer exit: buff=%p regBufFlag=%d offset=%zu "
+         "peerAddr=%p",
+         userbuff, *regBufFlag, *offsetOut,
+         peerRmtAddrsOut && *peerRmtAddrsOut ? *peerRmtAddrsOut : NULL);
+  } else {
+    INFO(SDCCL_REG,
+         "sdcclP2pRegisterBuffer skip: comm=%p buff=%p size=%zu nPeers=%d",
+         comm, userbuff, buffSize, nPeers);
+  }
+  return sdcclSuccess;
+}
+
+sdcclResult_t sdcclP2pDeregisterBuffer(struct sdcclHeteroComm *comm,
+                                         sdcclIpcRegInfo *info) {
+  if (comm == NULL || info == NULL) {
+    return sdcclSuccess;
+  }
+  INFO(SDCCL_REG,
+       "P2P deregister buffer: comm=%p peerRank=%d rmtRegAddr=%p offset=%zu "
+       "legacyIpcCap=%d",
+       comm, info->peerRank, info->impInfo.rmtRegAddr, info->impInfo.offset,
+       info->impInfo.legacyIpcCap);
+
+  // Close IPC handle if opened (sender side)
+  if (info->impInfo.rmtRegAddr && info->impInfo.legacyIpcCap) {
+    // Need to close the IPC memory handle that was opened
+    void *baseAddr =
+        (void *)((uintptr_t)info->impInfo.rmtRegAddr - info->impInfo.offset);
+    deviceAdaptor->ipcMemHandleClose(baseAddr);
+    INFO(SDCCL_REG,
+         "P2P deregister: closed IPC handle for rmtRegAddr=%p baseAddr=%p",
+         info->impInfo.rmtRegAddr, baseAddr);
+  }
+  free(info);
+
+  return sdcclSuccess;
+}
+
+/*
+  If support inter-process P2P via proxy, implement these functions
+*/
+// sdcclResult_t sdcclP2pProxyRegister(struct sdcclProxyConnection*
+// connection,
+//                                       struct sdcclProxyState* proxyState,
+//                                       void* reqBuff, int reqSize,
+//                                       void* respBuff, int respSize, int*
+//                                       done) {
+//   struct p2pIpcExpInfo* ipcExpInfo = (struct p2pIpcExpInfo*)reqBuff;
+//   void* regAddr = NULL;
+//   sdcclResult_t ret = sdcclSuccess;
+
+//   if (proxyState == NULL) {
+//     WARN("Proxy register missing state context");
+//     *done = 1;
+//     return sdcclInvalidArgument;
+//   }
+//   INFO(SDCCL_REG, "Proxy rank %d register reqBuff %p size %ld offset %ld
+//   legacyIpcCap %d sameProcess %d", proxyState->cudaDev, reqBuff,
+//   ipcExpInfo->size, ipcExpInfo->offset, ipcExpInfo->legacyIpcCap,
+//   connection->sameProcess);
+//   SDCCLCHECKGOTO(deviceAdaptor->setDevice(proxyState->cudaDev), ret, exit);
+
+//   if (sizeof(struct p2pIpcExpInfo) != reqSize) {
+//     WARN("Invalid request size for P2P proxy register: expected %zu, got %d",
+//          sizeof(struct p2pIpcExpInfo), reqSize);
+//     *done = 1;
+//     return sdcclInvalidArgument;
+//   }
+
+//   if (sizeof(void*) != respSize) {
+//     WARN("Invalid response size for P2P proxy register: expected %zu, got
+//     %d",
+//          sizeof(void*), respSize);
+//     *done = 1;
+//     return sdcclInvalidArgument;
+//   }
+
+//   // Request peer passes all necessary buffer info to import. The proxy
+//   thread would register
+//   // the buffer locally and return register addr back
+//   if (ipcExpInfo->legacyIpcCap) {
+//     if (connection->sameProcess) {
+//       void *baseAddr = NULL;
+//       memcpy(&baseAddr, &ipcExpInfo->ipcDesc.handleData, sizeof(void *));
+//       regAddr = (void *)((uintptr_t)baseAddr + ipcExpInfo->offset);
+//     } else {
+//       // Legacy CUDA IPC import
+//       sdcclIpcMemHandle_t ipcHandle =
+//           (sdcclIpcMemHandle_t)&ipcExpInfo->ipcDesc.handleData;
+
+//       sdcclResult_t openRes =
+//           deviceAdaptor->ipcMemHandleOpen(ipcHandle, &regAddr);
+//       if (openRes != sdcclSuccess) {
+//         WARN("ipcMemHandleOpen failed: res=%d size=%zu offset=%zu
+//         legacyIpc=%d",
+//              static_cast<int>(openRes), ipcExpInfo->size, ipcExpInfo->offset,
+//              ipcExpInfo->legacyIpcCap);
+//         ret = openRes;
+//         goto fail;
+//       }
+//       if (regAddr == NULL) {
+//         WARN("ipcMemHandleOpen returned NULL ptr size=%zu offset=%zu "
+//              "legacyIpc=%d",
+//              ipcExpInfo->size, ipcExpInfo->offset, ipcExpInfo->legacyIpcCap);
+//         goto fail;
+//       }
+//       regAddr = (void *)((uintptr_t)regAddr + ipcExpInfo->offset);
+//     }
+//   } else {
+//     // cuMem or advanced IPC import not fully supported yet
+//     WARN("Non-legacy IPC import not implemented in proxy");
+//     goto fail;
+//   }
+//   INFO(SDCCL_REG, "Proxy register success regAddr %p size %zu offset %zu
+//   legacyIpcCap %d sameProcess %d",
+//        regAddr, ipcExpInfo->size, ipcExpInfo->offset,
+//        ipcExpInfo->legacyIpcCap, connection->sameProcess);
+
+// exit:
+//   memcpy(respBuff, (void*)&regAddr, sizeof(void*));
+//   *done = 1;
+//   return ret;
+
+// fail:
+//   regAddr = NULL;
+//   goto exit;
+// }
+
+// sdcclResult_t sdcclP2pProxyDeregister(struct sdcclProxyConnection*
+// connection,
+//   void* reqBuff, int reqSize, int* done) {
+//                                           // struct sdcclProxyState*
+//                                           proxyState,
+//   sdcclResult_t ret = sdcclSuccess;
+//   struct sdcclIpcImpInfo* ipcInfo = (struct sdcclIpcImpInfo*)reqBuff;
+
+//   // if (proxyState == NULL) {
+//   //   WARN("Proxy deregister missing state context");
+//   //   *done = 1;
+//   //   return sdcclInvalidArgument;
+//   // }
+//   // deviceAdaptor->setDevice(proxyState->cudaDev);
+
+//   if (sizeof(struct sdcclIpcImpInfo) != reqSize) {
+//     WARN("Invalid request size for P2P proxy deregister: expected %zu, got
+//     %d",
+//          sizeof(struct sdcclIpcImpInfo), reqSize);
+//     *done = 1;
+//     return sdcclInvalidArgument;
+//   }
+
+//   void* baseAddr = (void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset);
+
+//   if (ipcInfo->legacyIpcCap) {
+//     // Legacy CUDA IPC close
+//     SDCCLCHECKGOTO(deviceAdaptor->ipcMemHandleClose(baseAddr), ret, fail);
+//   } else {
+//     // cuMem or advanced IPC deallocation not fully supported yet
+//     WARN("Non-legacy IPC deregister not implemented in proxy");
+//     goto fail;
+//   }
+// exit:
+//   *done = 1;
+//   return ret;
+
+// fail:
+//   goto exit;
+// }
+
+sdcclResult_t sdcclP2pSendProxyFree(struct sdcclP2pResources *resources) {
+  if (resources == NULL)
+    return sdcclSuccess;
+
+  for (int s = 0; s < sdcclP2pChunks; s++) {
+    if (resources->proxyInfo.events[s] != NULL) {
+      SDCCLCHECK(deviceAdaptor->eventDestroy(resources->proxyInfo.events[s]));
+    }
+  }
+
+  if (resources->proxyInfo.stream != NULL) {
+    SDCCLCHECK(deviceAdaptor->streamDestroy(resources->proxyInfo.stream));
+  }
+
+  if (resources->proxyInfo.shm != NULL) {
+    SDCCLCHECK(sdcclShmIpcClose(&resources->proxyInfo.desc));
+  }
+  return sdcclSuccess;
+}
+
+sdcclResult_t sdcclP2pRecvProxyFree(struct sdcclP2pResources *resources) {
+  if (resources == NULL)
+    return sdcclSuccess;
+
+  // Destroy events
+  for (int s = 0; s < sdcclP2pChunks; s++) {
+    if (resources->proxyInfo.events[s] != NULL) {
+      SDCCLCHECK(deviceAdaptor->eventDestroy(resources->proxyInfo.events[s]));
+    }
+  }
+
+  // Destroy stream
+  if (resources->proxyInfo.stream != NULL) {
+    SDCCLCHECK(deviceAdaptor->streamDestroy(resources->proxyInfo.stream));
+  }
+  return sdcclSuccess;
+}
