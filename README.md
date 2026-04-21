@@ -48,6 +48,7 @@ Please check the guides on building, testing the software:
 - [Changelog](./docs/CHANGELOG.md)
 - [Getting started](./docs/getting_started.md)
 - [Environment variables](./docs/environment_variables.md)
+- [Architecture & flow diagrams](./docs/architecture.md)
 
 
 ## Backend Support
